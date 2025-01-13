@@ -1,0 +1,5 @@
+2025-01-10 05:24:30,363 - DEBUG - Created new connection using: 9a433bfc81ac41179c0e7342aef758a8
+2025-01-10 05:24:30,552 - INFO - PyTorch version 2.5.1+cu121 available.
+2025-01-10 05:24:30,645 - INFO - Load pretrained SentenceTransformer: sentence-transformers/all-MiniLM-L6-v2
+2025-01-10 05:24:33,386 - INFO - Using downloaded & verified file: /home/aicoe/.cache/doctr/models/fast_base-688a8b34.pt
+2025-01-10 05:24:34,856 - INFO - Using downloaded & verified file: /home/aicoe/.cache/doctr/models/crnn_vgg16_bn-9762b0b0.pt

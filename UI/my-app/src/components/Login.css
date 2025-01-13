@@ -1,0 +1,75 @@
+  
+  /* Apply background to body */
+  .login-page {
+    background-color: #f7f7f7;
+    font-family: 'Arial', sans-serif;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    height: 100vh;
+  }
+  
+  /* Style the login container */
+  .login-container {
+    background-color: #fff;
+    padding: 40px;
+    border-radius: 8px;
+    box-shadow: 0 4px 10px rgba(0, 0, 0, 0.1);
+    width: 100%;
+    max-width: 400px;
+    text-align: center;
+  }
+  
+  /* Style the login heading */
+  .login-title {
+    font-size: 28px;
+    margin-bottom: 20px;
+    color: #333;
+  }
+  
+  /* Form styles */
+  .login-form {
+    display: flex;
+    flex-direction: column;
+  }
+  
+  /* Input styles */
+  .input-field {
+    padding: 12px;
+    margin: 10px 0;
+    border: 1px solid #ccc;
+    border-radius: 4px;
+    font-size: 16px;
+    outline: none;
+    transition: border-color 0.3s ease;
+  }
+  
+  /* Input focus effect */
+  .input-field:focus {
+    border-color: #007bff;
+  }
+  
+  /* Button styles */
+  .submit-btn {
+    padding: 12px;
+    background: linear-gradient(40.46deg,#4A25E1 26.3%, #7B5AFF 86.4%);
+    color: #fff;
+    border: none;
+    border-radius: 4px;
+    font-size: 16px;
+    cursor: pointer;
+    transition: background-color 0.3s ease;
+  }
+  
+  /* Button hover effect */
+  .submit-btn:hover {
+    background: linear-gradient(40.46deg,#391ea3 26.3%, #7057d3 86.4%);
+  }
+  
+  /* Error message styling */
+  .error-message {
+    color: red;
+    font-size: 14px;
+    margin-bottom: 15px;
+  }
+  

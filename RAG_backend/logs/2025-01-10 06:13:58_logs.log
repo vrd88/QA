@@ -1,0 +1,57 @@
+2025-01-10 06:13:58,608 - DEBUG - Created new connection using: 184cec4cc31a488498cc93a3813b34e4
+2025-01-10 06:13:58,795 - INFO - PyTorch version 2.5.1+cu121 available.
+2025-01-10 06:13:58,891 - INFO - Load pretrained SentenceTransformer: sentence-transformers/all-MiniLM-L6-v2
+2025-01-10 06:14:01,495 - INFO - Using downloaded & verified file: /home/aicoe/.cache/doctr/models/fast_base-688a8b34.pt
+2025-01-10 06:14:02,944 - INFO - Using downloaded & verified file: /home/aicoe/.cache/doctr/models/crnn_vgg16_bn-9762b0b0.pt
+2025-01-10 06:19:37,300 - DEBUG - Created new connection using: df3f5553f723454d8fcfd6ebee0cb551
+2025-01-10 06:19:38,043 - DEBUG - Created new connection using: fab7cc2b88004c3a8816bbee9b9e362f
+2025-01-10 06:19:38,505 - DEBUG - Created new connection using: 1fb12e155a9d4bd3ab693a19ebfbf53e
+2025-01-10 06:19:38,904 - DEBUG - Created new connection using: ed38941214d04a5ab44f6111f08b5bbb
+2025-01-10 06:20:52,391 - WARNING - failed to get mvccTs from milvus server, use client-side ts instead
+2025-01-10 06:20:54,050 - WARNING - failed to get mvccTs from milvus server, use client-side ts instead
+2025-01-10 06:24:16,868 - DEBUG - Created new connection using: fd9da5d0eabf417b8c3fbc3732df29b2
+2025-01-10 06:24:17,498 - DEBUG - Created new connection using: 52921063be0846159b54fba95410ad9b
+2025-01-10 06:24:18,085 - DEBUG - Created new connection using: 0b379c2067c54d06aa196d4ad44b647f
+2025-01-10 06:24:18,478 - DEBUG - Created new connection using: 9199aa11fa4e44e693942e8a6166553e
+2025-01-10 06:24:20,272 - WARNING - failed to get mvccTs from milvus server, use client-side ts instead
+2025-01-10 06:24:22,102 - WARNING - failed to get mvccTs from milvus server, use client-side ts instead
+2025-01-10 06:25:19,013 - DEBUG - Created new connection using: 5a99dc93022e4dbc987f2ae78b90a6ee
+2025-01-10 06:25:19,115 - DEBUG - Created new connection using: a3d70c7605ad42048ff346a19f19325b
+2025-01-10 06:25:19,340 - DEBUG - Created new connection using: 4f551a3f9389451d97d4fdfea6f6c3eb
+2025-01-10 06:25:19,465 - DEBUG - Created new connection using: e0e9a758be974f40b738890e8bc194d3
+2025-01-10 06:25:23,301 - WARNING - failed to get mvccTs from milvus server, use client-side ts instead
+2025-01-10 06:25:24,870 - WARNING - failed to get mvccTs from milvus server, use client-side ts instead
+2025-01-10 06:25:59,384 - DEBUG - Created new connection using: 167fae7a51eb4a198236bbac920595bb
+2025-01-10 06:25:59,525 - DEBUG - Created new connection using: a36c695c05434e9db90a90ec726f16be
+2025-01-10 06:25:59,683 - DEBUG - Created new connection using: faecc71fe4a44f4e9f941f163a026b5a
+2025-01-10 06:25:59,789 - DEBUG - Created new connection using: 5e5e3a4278d6405c8e060c66ffc80ac8
+2025-01-10 06:26:02,924 - WARNING - failed to get mvccTs from milvus server, use client-side ts instead
+2025-01-10 06:26:04,280 - WARNING - failed to get mvccTs from milvus server, use client-side ts instead
+2025-01-10 06:26:23,213 - DEBUG - Created new connection using: 72339e3b423843039a4db0725c89809a
+2025-01-10 06:26:23,321 - DEBUG - Created new connection using: 5d3ca53c12df4b0aacc2a7db98284112
+2025-01-10 06:26:23,544 - DEBUG - Created new connection using: 2dcbff22e7624c609ce316e66bf93553
+2025-01-10 06:26:23,651 - DEBUG - Created new connection using: dc3d590006914b458c5dcbbd1dcfcdcd
+2025-01-10 06:26:26,102 - WARNING - failed to get mvccTs from milvus server, use client-side ts instead
+2025-01-10 06:26:27,683 - WARNING - failed to get mvccTs from milvus server, use client-side ts instead
+2025-01-10 06:30:11,721 - DEBUG - Created new connection using: a7626ae8d495403d99160a75559d638e
+2025-01-10 06:30:12,195 - DEBUG - Created new connection using: 7ccb7453264f4d6aaf18f3dfdb6f9825
+2025-01-10 06:30:12,605 - DEBUG - Created new connection using: 8b5419a41b6b4057b706d59a450d0eaa
+2025-01-10 06:30:13,122 - DEBUG - Created new connection using: 320db2f1aaf64e84a5914b1729ed3e31
+2025-01-10 09:13:42,829 - DEBUG - Created new connection using: a117c4f1b5c143e499ec8c4b767ae4c9
+2025-01-10 09:13:43,351 - DEBUG - Created new connection using: 3f2b3a3f501f434ab9bdc4fedb7b8430
+2025-01-10 09:13:43,619 - DEBUG - Created new connection using: 028ef574311449da9fad2c0c179095bb
+2025-01-10 09:13:43,893 - DEBUG - Created new connection using: 126f40df51a54041add27ad7c1fc44e3
+2025-01-10 09:16:18,363 - DEBUG - Created new connection using: e33fd28ca9ae4ac985fa9ba826567324
+2025-01-10 09:16:19,487 - DEBUG - Created new connection using: 617df6385d54402388d21936698853eb
+2025-01-10 09:16:19,754 - DEBUG - Created new connection using: 76142f8ac546446e8ac97e38e228141a
+2025-01-10 09:16:20,121 - DEBUG - Created new connection using: 8c565856b1974f0eb5dd6779d69b2225
+2025-01-10 09:25:58,216 - WARNING - Not Found: /api/documents_by_ps_number/test/
+2025-01-10 09:25:58,512 - WARNING - failed to get mvccTs from milvus server, use client-side ts instead
+2025-01-10 09:25:58,715 - WARNING - Not Found: /api/documents_by_ps_number/test/
+2025-01-10 09:26:00,315 - WARNING - failed to get mvccTs from milvus server, use client-side ts instead
+2025-01-10 09:46:48,886 - WARNING - Not Found: /api/documents_by_ps_number/test/
+2025-01-10 09:46:53,508 - WARNING - failed to get mvccTs from milvus server, use client-side ts instead
+2025-01-10 09:47:34,308 - DEBUG - Created new connection using: 938dd1a17cfd40c199f92c44177f380a
+2025-01-10 09:47:39,459 - DEBUG - Created new connection using: 91b864a763ac4fbab324098ecca78469
+2025-01-10 09:47:39,686 - DEBUG - Created new connection using: c3ae9e3d6957492a806ab3c5d516e7b9
+2025-01-10 09:47:40,070 - DEBUG - Created new connection using: 7ca98b860b294c968f9da0aad2fade5b

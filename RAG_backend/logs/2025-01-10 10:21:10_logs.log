@@ -1,0 +1,10 @@
+2025-01-10 10:21:10,765 - DEBUG - Created new connection using: dcd2fc3e695a4c98ae1b8a170208b733
+2025-01-10 10:21:11,042 - INFO - PyTorch version 2.5.1+cu121 available.
+2025-01-10 10:21:11,263 - INFO - Load pretrained SentenceTransformer: sentence-transformers/all-MiniLM-L6-v2
+2025-01-10 10:21:13,958 - INFO - Using downloaded & verified file: /home/aicoe/.cache/doctr/models/fast_base-688a8b34.pt
+2025-01-10 10:21:15,521 - INFO - Using downloaded & verified file: /home/aicoe/.cache/doctr/models/crnn_vgg16_bn-9762b0b0.pt
+2025-01-10 10:21:44,508 - WARNING - Not Found: /api/documents_by_ps_number/test/
+2025-01-10 10:21:45,155 - WARNING - failed to get mvccTs from milvus server, use client-side ts instead
+2025-01-10 10:21:45,308 - WARNING - Not Found: /api/documents_by_ps_number/test/
+2025-01-10 10:21:46,666 - WARNING - failed to get mvccTs from milvus server, use client-side ts instead
+2025-01-10 10:24:03,440 - INFO - /home/aicoe/Desktop/LLM-only/RAG_backend/cohere_app/views.py changed, reloading.
