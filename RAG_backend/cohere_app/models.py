@@ -19,8 +19,6 @@ class PromptHistory(models.Model):
     
 
 class UserAccess(models.Model):
-   
-    ps_numbers = models.TextField()
     document_name = models.TextField() 
     class Meta:
         db_table = 'user_access'  # Map to the existing table

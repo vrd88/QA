@@ -1,5 +1,5 @@
 from django.contrib import admin
-from .models import PromptHistory
+from .models import PromptHistory, CurrentUsingCollection
 
 
 class DataAdmin(admin.ModelAdmin):
@@ -9,3 +9,4 @@ class DataAdmin(admin.ModelAdmin):
 
 # Register the model and the admin class
 admin.site.register(PromptHistory, DataAdmin)
+admin.site.register(CurrentUsingCollection)

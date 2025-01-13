@@ -11,10 +11,10 @@ urlpatterns = [
     path('save-comment/<int:pk>/',save_comment, name='save-comment'),
     path('mark_satisfied/<int:pk>/', mark_satisfied, name='mark_satisfied'),
     path('mark_unsatisfied/<int:pk>/', mark_unsatisfied, name='mark_unsatisfied'),
-    path('documents/', get_files),
+    path('documents/', get_documents),
     path('serve-pdf/<str:filename>/<int:page_number>/', serve_pdf, name='serve_pdf'),
-    path('folder_name/',get_folder),
-    path('documents_by_ps_number/<str:ps_number>/', get_documents_by_ps_number, name='get_documents_by_ps_number'),
+    # path('folder_name/',get_folder),
+    # path('documents_by_ps_number', get_documents, name='get_documents_by_ps_number'),
 
     
     path('collections/', get_collection_name, name='get_collections'),
@@ -29,8 +29,6 @@ urlpatterns = [
     path('current-using-collection/', get_current_using_collection, name='get-current-using-collection'),
     path("update-current-collection/", update_current_collection, name="update-current-collection"),
     
-    path('restart-server/', restart_server, name='restart_server'),
-
-
+    path('restart-server/', restart_server, name='restart_server')
 ]
 

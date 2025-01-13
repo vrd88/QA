@@ -1,10 +1,16 @@
-from django.http import JsonResponse
-from django.contrib.auth.models import User
+import PyPDF2
+from io import BytesIO
+from decouple import config
+import os
+from datetime import datetime, timedelta
+import glob
+import uuid
+import threading
+import mysql.connector
+from django.http import JsonResponse, StreamingHttpResponse, FileResponse, Http404
 from django.contrib.auth import authenticate
-from django.conf import settings
 from django.utils import timezone
 from django.db.models import Min
-from datetime import timedelta
 from rest_framework import status
 from rest_framework.decorators import api_view, permission_classes
 from rest_framework.permissions import AllowAny, IsAuthenticated
@@ -12,20 +18,19 @@ from rest_framework.response import Response
 from rest_framework_simplejwt.tokens import RefreshToken
 from .models import PromptHistory
 from .serializers import PromptHistorySerializer
-import requests, re
-import uuid
+from django.views.decorators.csrf import csrf_exempt
+from pymilvus import connections, Collection, MilvusClient
 from .api import process_query, get_all_files_from_milvus,get_all_folders_from_milvus
-from .api import process_query, get_all_files_from_milvus,get_all_folders_from_milvus
-from django.http import StreamingHttpResponse
-import threading
+from .Chunking_UI import file_process
+from django.db import connection
+from rest_framework.decorators import api_view, permission_classes
+import urllib.parse
+from rest_framework.decorators import api_view, permission_classes
+from rest_framework.permissions import IsAuthenticated
+from .Chunking_UI import enable_logging
+from .Chunking_UI import db_utility 
 
-from django.http import FileResponse, Http404
-import os
-import PyPDF2
-from io import BytesIO
-from decouple import config
-
-# Path to your directory containing PDFs
+DEFAULT_PAGE_SIZE = 150
 PDF_DIRECTORY = config('PDF_DIRECTORY')
 
 
@@ -65,7 +70,6 @@ def logout_user(request):
         return Response({"error": "Invalid token or logout failed"}, status=status.HTTP_400_BAD_REQUEST)
 
 
-
 @api_view(['POST'])
 @permission_classes([IsAuthenticated])
 def cohere_generate(request):
@@ -94,10 +98,6 @@ def cohere_generate(request):
         serializer = PromptHistorySerializer(prompt_history_entry)
         history_id = serializer.data['id']
 
-        # # Lists to store extracted file names and page numbers
-        # extracted_file_names = []
-        # extracted_page_numbers = []
-
         # Generator function for streaming response
         def response_stream():
             collected_responses = []
@@ -106,29 +106,6 @@ def cohere_generate(request):
             for partial_response in process_query(prompt, file_names, jwt_token):
                 collected_responses.append(partial_response)
 
-                # # Split the partial response into individual lines
-                # lines = partial_response.split('\n')
-                
-                # # Process each line individually
-                # for line in lines:
-                #     print(f"Processing line: {line}")  # Debug print for each line
-                #     # Extract file name and page number from the line
-                #     pattern = r"Source:\s+([^|]+)\s+\|\s+Page:\s+(\d+)"
-                #     match = re.search(pattern, line)
-                #     if match:
-                #         file_name = match.group(1).strip()
-                #         page_number = match.group(2).strip()
-                #         print(f"Appending: {file_name}, {page_number}")
-                #         # Append extracted data to the lists
-                #         extracted_file_names.append(file_name)
-                #         extracted_page_numbers.append(page_number)
-
-                #         # Debug print for extracted values
-                #         print(f"Extracted file name: {file_name}, page number: {page_number}")
-                #     else:
-                #         print("No match found for this line.")  # Debug when no match is found
-
-                # Yield the current partial response
                 yield partial_response
 
             # Combine all collected responses for final response
@@ -210,7 +187,6 @@ def get_session_history(request, session_id):
 
     except Exception as e:
         return Response({'error': str(e)}, status=status.HTTP_400_BAD_REQUEST)
-    
 
 
 @api_view(['POST'])
@@ -275,60 +251,14 @@ def mark_unsatisfied(request, pk):
 def get_files(request):
     files = get_all_files_from_milvus()  
     return JsonResponse({"files":files}) 
-    # try:
-    #     # Fetch all document_name values from the Document model
-    #     documents = UserAccess.objects.values('document_name')  # Fetch only the document_name field
-    files = get_all_files_from_milvus()  
-    return JsonResponse({"files":files}) 
-    # try:
-    #     # Fetch all document_name values from the Document model
-    #     documents = UserAccess.objects.values('document_name')  # Fetch only the document_name field
 
-    #     if documents.exists():
-    #         # Extract file names from document_name paths
-    #         file_names = [doc['document_name'].split('/')[-1] for doc in documents]
-    #         print('file_names:',file_names)
-    #         return JsonResponse({'files': file_names}, status=200)
-    #     else:
-    #         return JsonResponse({'error': 'No documents found'}, status=404)
-    # except Exception as e:
-    #     return JsonResponse({'error': str(e)}, status=500)
-    
-# from django.http import JsonResponse
-# from .models import UserAccess
-# from rest_framework.decorators import api_view
-# from django.db.models import Q
-
-# from django.db import connection
-
-# @api_view(['GET'])
-# def get_documents_by_ps_number(request, ps_number):
-#     try:
-#         with connection.cursor() as cursor:
-#             cursor.execute(
-#                 "SELECT document_name FROM user_access_ram_test WHERE ps_number REGEXP %s",
-#                 # [f'(^|,){ps_number}(,|$)']
-#                 [f"\\['.*{ps_number}.*'\\]"]
-
-#             )
-#             documents = cursor.fetchall()
-
-#         if documents:
-#             file_names = [doc[0].split('/')[-1] for doc in documents]
-#             return JsonResponse({'files': file_names}, status=200)
-#         else:
-#             return JsonResponse({'error': 'No documents found for this ps_number'}, status=404)
-#     except Exception as e:
-#         return JsonResponse({'error': str(e)}, status=500)
-
-from django.db import connection
 
 @api_view(['GET'])
-def get_documents_by_ps_number(request, ps_number):
+def get_documents(request):
     try:
         # Get the current collection name
         current_collection = CurrentUsingCollection.objects.first()  
-        collection_name=current_collection.current_using_collection
+        collection_name=current_collection.cohere_app_currentusingcollection
         if not collection_name:
             return JsonResponse({'error': 'No current collection found'}, status=404)
 
@@ -337,8 +267,8 @@ def get_documents_by_ps_number(request, ps_number):
 
         with connection.cursor() as cursor:
             # Execute the SQL query with the dynamically built table name
-            query = f"SELECT document_name FROM {table_name} WHERE ps_number REGEXP %s"
-            cursor.execute(query, [f"\\['.*{ps_number}.*'\\]"])
+            query = f"SELECT document_name FROM {table_name}"
+            cursor.execute(query)
             documents = cursor.fetchall()
 
         if documents:
@@ -346,7 +276,6 @@ def get_documents_by_ps_number(request, ps_number):
             file_names = [doc[0].split('/')[-1] for doc in documents]
             return JsonResponse({'files': file_names}, status=200)
         else:
-            return JsonResponse({'error': 'No documents found for this ps_number'}, status=404)
             return JsonResponse({'error': 'No documents found for this ps_number'}, status=404)
     except Exception as e:
         return JsonResponse({'error': str(e)}, status=500)
@@ -388,25 +317,13 @@ def serve_pdf(request, filename, page_number):
         raise Http404("PDF not found")
 
 
-
 @api_view(['GET'])
 def get_folder(request):
     folder = get_all_folders_from_milvus()  
     return JsonResponse({"folder":folder}) 
 
 
-
-
-
-
-
-
-
 # admin page
-
-from pymilvus import connections, MilvusClient, Collection
-from django.views.decorators.csrf import csrf_exempt
-
 @csrf_exempt  
 def get_collection_name(request):
     try:
@@ -419,43 +336,7 @@ def get_collection_name(request):
         return JsonResponse({"collections": collections}, status=200)
     except Exception as e:
         return JsonResponse({"error": str(e)}, status=500)
-    
 
-
-
-# @csrf_exempt  
-# def collection_files(request, collection_name):
-#     if request.method == 'GET':
-#         try:
-#             # Connect to Milvus
-#             connections.connect("default", host='localhost', port='19530')
-            
-#             # Initialize collection object
-#             collection = Collection(collection_name)
-            
-#             # Query the collection
-#             iterator = collection.query_iterator(batch_size=1000, output_fields=["source"])
-#             results = []
-            
-#             while True:
-#                 result = iterator.next()
-#                 if not result:
-#                     iterator.close()
-#                     break
-#                 results.extend(result)
-            
-#             # Return the results as a JSON response
-#             return JsonResponse({"results": results}, status=200)
-        
-#         except Exception as e:
-#             return JsonResponse({"error": str(e)}, status=500)
-    
-#     return JsonResponse({"error": "Invalid request method"}, status=405)
-
-
-from django.http import JsonResponse
-from django.views.decorators.csrf import csrf_exempt
-from pymilvus import connections, Collection
 
 @csrf_exempt  
 def collection_files(request, collection_name):
@@ -488,7 +369,6 @@ def collection_files(request, collection_name):
     
     return JsonResponse({"error": "Invalid request method"}, status=405)
 
-import mysql.connector
 
 @csrf_exempt  
 def delete_collection(request, collection_name):
@@ -521,10 +401,6 @@ def delete_collection(request, collection_name):
         return JsonResponse({"message": f"Collection '{collection_name}' deleted successfully."}, status=200)
     except Exception as e:
         return JsonResponse({"error": str(e)}, status=500)
-
-from django.http import JsonResponse
-from pymilvus import Collection, connections
-import urllib.parse
 
 
 @csrf_exempt
@@ -584,18 +460,6 @@ def delete_file(request, source, collection_name):
 
 
 
-import tempfile
-import os
-from django.http import JsonResponse
-from rest_framework.decorators import api_view, permission_classes
-from rest_framework.permissions import IsAuthenticated
-from datetime import datetime
-from pymilvus import MilvusClient
-# from cohere_app.Chunking_UI.db_utility import fetch_all_documents,insert_chunking_monitor
-# from cohere_app.Chunking_UI.enable_logging import logger
-
-from .Chunking_UI import enable_logging
-from .Chunking_UI import db_utility 
 
 # Initialize Milvus client
 client = MilvusClient(uri="http://localhost:19530", token="root:Milvus")
@@ -611,110 +475,6 @@ def set_progress_message(message):
     global progress_data
     progress_data["message"] = message
 
-from django.http import JsonResponse
-from rest_framework.decorators import api_view, permission_classes
-from rest_framework.permissions import IsAuthenticated
-import tempfile
-import os
-from datetime import datetime
-from .Chunking_UI import file_process
-
-# @api_view(['POST'])
-# @permission_classes([IsAuthenticated])
-# def create_collection(request):
-#     collection_name = request.data.get('name')
-#     files = request.FILES.getlist('files')
-#     print("files from_frontend :",files)
-#     # Validate input
-#     if not collection_name or not files:
-#         return JsonResponse({"error": "Collection name and files are required."}, status=400)
-
-#     try:
-#         enable_logging.logger.info(f"Starting collection creation for {collection_name}.")
-#         start_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-
-#         # Check if the collection exists
-#         if collection_name in client.list_collections():
-#             enable_logging.logger.info(f"Collection {collection_name} already exists. Skipping creation.")
-#             set_progress_message(f"Collection {collection_name} already exists. Skipping creation.")
-#         else:
-#             enable_logging.logger.info(f"Creating new collection: {collection_name}")
-#             set_progress_message(f"Creating new collection: {collection_name}")
-
-#         # Fetch already processed documents
-#         already_chunked = db_utility.fetch_all_documents()
-#         already_chunked_file = [os.path.basename(path) for path in already_chunked]
-
-#         print("already_chunked:", already_chunked_file)
-#         enable_logging.logger.info(f"Already chunked documents: {already_chunked_file}")
-
-#         needs_to_be_chunked = []
-#         temp_file_paths = []  # Keep track of temporary file paths
-
-#         for uploaded_file in files:
-#                 original_name = uploaded_file.name  # Get the original file name
-#                 temp_dir = tempfile.gettempdir()  # Get the system's temp directory
-#                 temp_file_path = os.path.join(temp_dir, original_name)  # Construct the full path with the original name
-                
-#                 # Write the uploaded file content to the temporary file
-#                 with open(temp_file_path, 'wb') as temp_file:
-#                     temp_file.write(uploaded_file.read())
-                
-#                 temp_file_paths.append(temp_file_path)  # Store the temporary file path for later use
-#                 print("temp_file_path:", temp_file_path)
-#                 enable_logging.logger.info(f"Temporary file created: {temp_file_path}")
-
-#                 # Check if the file name is already processed
-#                 if uploaded_file.name not in already_chunked_file:  # Check file name, not path
-#                     needs_to_be_chunked.append(temp_file_path)  # Append the temp file path
-#                     set_progress_message(f"Processing file {uploaded_file.name}")
-#                     print(f"Processing file {uploaded_file.name}")
-#                 else:
-#                     os.remove(temp_file_path)
-#                     enable_logging.logger.info(f"Temporary file deleted: {temp_file_path}")
-#                     set_progress_message(f"Skipping already processed file: {uploaded_file.name}")
-
-#         if needs_to_be_chunked:
-
-#             # Pass the file contents to create_langchain_documents
-#             print("needs_to_be_chunked:",needs_to_be_chunked)
-#             print("collection_name:",collection_name)
-            
-#             # file_process.create_langchain_documents(needs_to_be_chunked, collection_name)
-#               # Pass the file contents to create_langchain_documents and capture the progress
-#             progress_generator = file_process.create_langchain_documents(needs_to_be_chunked, collection_name)
-
-#             for progress in progress_generator:
-#                 # Set the progress message for each yielded progress
-#                 progress_message = f"Progress: {progress['current_progress']}/{progress['total_files']} - {progress['progress_percentage']:.2f}%"
-#                 set_progress_message(progress_message)
-                
-#             # Clean up temporary files after processing
-#             for temp_file_path in temp_file_paths:
-#                 if os.path.exists(temp_file_path):
-#                     os.remove(temp_file_path)
-#                     enable_logging.logger.info(f"Temporary file deleted after processing: {temp_file_path}")
-#         else:
-#             set_progress_message("No new files to process.")
-
-#         # Insert into chunking monitor
-#         end_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-#         insert_query_chunking_monitor = f"""
-#             INSERT INTO chunking_monitor (start_time, completed_time, logging_file, chunked_folder, database_name)
-#             VALUES 
-#             ('{start_time}', '{end_time}', '{start_time}_logs.log','{collection_name}', '{collection_name}')
-#         """
-#         db_utility.insert_chunking_monitor(insert_query_chunking_monitor)
-
-#         set_progress_message(f"Collection {collection_name} created successfully.")
-#         set_progress_message("Upload completed.")
-#         return JsonResponse({"message": "Collection creation completed."}, status=200)
-#     except Exception as e:
-#         enable_logging.logger.error(f"Error during collection creation: {str(e)}")
-#         set_progress_message(f"Error occurred: {str(e)}")
-#         return JsonResponse({"error": str(e)}, status=500)
-
-import glob
 
 # Helper function to find files in the source folder
 def find_files(root_dir, extensions):
@@ -732,7 +492,7 @@ def create_collection(request):
     source = request.data.get('source')
     if not collection_name or not source:
         return JsonResponse({"error": "Collection name and source are required."}, status=400)
-
+    print(collection_name, source)
     try:
         enable_logging.logger.info(f"Starting collection creation for {collection_name}.")
         start_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
@@ -748,7 +508,7 @@ def create_collection(request):
         # Fetch already processed documents
         already_chunked = db_utility.fetch_all_documents(collection_name)
         enable_logging.logger.info(f"Already chunked documents: {already_chunked}")
-
+        print("Hello",already_chunked)
         # Find files in the source directory
         file_extensions = ['.PDF', '.pdf', '.txt', '.pptx', '.docx', '.xlsx', '.csv']
         found_files = find_files(source, file_extensions)
@@ -788,13 +548,6 @@ def create_collection(request):
         return JsonResponse({"error": str(e)}, status=500)
 
 
-
-
-
-
-
-
-
 # Endpoint to get the current progress message
 @api_view(['GET'])
 @permission_classes([IsAuthenticated])
@@ -802,70 +555,6 @@ def get_progress(request):
     return JsonResponse(progress_data)
 
 
-
-
-# from django.http import JsonResponse
-# from pymilvus import connections, Collection
-# from rest_framework.decorators import api_view
-# from rest_framework.response import Response
-# from rest_framework import status
-
-# # Default page size
-# DEFAULT_PAGE_SIZE = 150
-
-# @api_view(["GET"])
-# def get_milvus_data(request, collection_name):
-#     # Connect to Milvus
-#     connections.connect(alias="default", host="localhost", port="19530")
-    
-#     # Fetch page and page size from request or set defaults
-#     page = int(request.GET.get("page", 1))  # Default to page 1
-#     page_size = DEFAULT_PAGE_SIZE
-
-#     try:
-#         # Load the collection
-#         collection = Collection(name=collection_name)
-#         collection.load()
-#     except Exception as e:
-#         return Response({"error": f"Failed to load collection: {str(e)}"}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
-
-#     # Calculate offset
-#     offset = (page - 1) * page_size
-
-#     # Fetch data
-#     try:
-#         results = collection.query(
-#             expr="",  # Optional filter expression
-#             output_fields=["source", "page", "text", "pk"],
-#             offset=offset,
-#             limit=page_size,
-#         )
-
-#         if not results:
-#             return Response({"message": "No more data available"}, status=status.HTTP_204_NO_CONTENT)
-
-#     except Exception as e:
-#         return Response({"error": f"Error querying Milvus: {str(e)}"}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
-
-#     # Prepare response with pagination info
-#     response_data = {
-#         "data": results,
-#         "page": page,
-#         "page_size": page_size,
-#         "next_page": page + 1 if len(results) == page_size else None,  # Indicate the next page
-#     }
-
-#     return JsonResponse(response_data, safe=False)
-
-
-
-from django.http import JsonResponse
-from pymilvus import connections, Collection
-from rest_framework.decorators import api_view
-from rest_framework.response import Response
-from rest_framework import status
-
-DEFAULT_PAGE_SIZE = 150
 
 @api_view(["GET"])
 def get_milvus_data(request, collection_name):
@@ -912,11 +601,6 @@ def get_milvus_data(request, collection_name):
     return JsonResponse(response_data, safe=False)
 
 
-# views.py
-from rest_framework.decorators import api_view
-from rest_framework.response import Response
-from .models import CurrentUsingCollection
-from .serializers import CurrentUsingCollectionSerializer
 
 @api_view(["GET"])
 def get_current_using_collection(request):

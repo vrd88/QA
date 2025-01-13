@@ -224,63 +224,6 @@ def process_ocr_document(file_path):
         logger.exception(f"Error processing OCR document {file_path}")
         return [], f"Error processing document {file_path}\n{e}"
 
-
-# def create_langchain_documents(found_files, collection_name):
-#     """
-#     Create langchain documents from the extracted and processed text.
-
-#     This function processes PDF, PPTX, DOCX, TXT, XLSX, and CSV files in parallel.
-#     If a PDF requires OCR processing (no text found), it's handled sequentially.
-#     """
-#     COUNT = 0
-    
-#     db_utility.create_user_access(collection_name)
-
-#     for file in found_files:
-#         text_by_page, message = process_document(file)  # Get the result of the future
-#         if text_by_page:
-#             users_ps_no_even = "['123', '124']"
-#             users_ps_no_odd = "['125', '126']"
-#             chunks = read_and_split_text(text_by_page)
-            
-#             for chunk, page_num in chunks:
-#                 documents = []
-            
-#                 doc = Document(page_content=chunk, metadata={'source': file, 'page': str(page_num)})
-#                 documents.append(doc)
-
-#                 if documents:
-#                     Milvus.from_documents(documents, embeddings, collection_name=collection_name,
-#                                             connection_args={'uri': "http://localhost:19530"})
-#                     # insert useraccess.
-#                     # print(":here", users_ps_no, file, message)
-#             if (COUNT & 1):
-#                 db_utility.insert_user_access(users_ps_no_odd, file, 'YES', message,collection_name)
-#             else:
-#                 db_utility.insert_user_access(users_ps_no_even, file, 'YES', message,collection_name)
-
-#             COUNT += 1
-
-        
-#     documents = []
-#     for ocr_file in tqdm(OCR_LIST,  desc="Overall Progress"):
-#         tqdm().set_description(f"Processing File :  {ocr_file}")
-#         text_by_page, message = process_ocr_document(ocr_file)
-#         if text_by_page:
-#             chunks = read_and_split_text(text_by_page)
-#             for chunk, page_num in chunks:
-#                 documents = []
-#                 doc = Document(page_content=chunk, metadata={'source': ocr_file, 'page': str(page_num)})
-#                 documents.append(doc)
-#                 if documents:
-#                     Milvus.from_documents(documents, embeddings, collection_name =collection_name, connection_args = {'uri':"http://localhost:19530"})
-#             # db_utility.insert_user_access(users_ps_no, ocr_file, 'YES', message)
-
-#          # Yield progress as percentage and current file progress
-#         progress_percentage = (OCR_LIST.index(ocr_file) + 1) / len(OCR_LIST) * 100
-#         yield {"progress_percentage": progress_percentage, "current_progress": OCR_LIST.index(ocr_file) + 1, "total_files": len(OCR_LIST)}
-
-
 def create_langchain_documents(found_files, collection_name):
     """
     Create langchain documents from the extracted and processed text.
@@ -296,8 +239,8 @@ def create_langchain_documents(found_files, collection_name):
     for file_index, file in enumerate(found_files):
         text_by_page, message = process_document(file)  # Get the result of the future
         if text_by_page:
-            users_ps_no_even = "['123', '124']"
-            users_ps_no_odd = "['125', '126']"
+            # users_ps_no_even = "['123', '124']"
+            # users_ps_no_odd = "['125', '126']"
             chunks = read_and_split_text(text_by_page)
 
             for chunk, page_num in chunks:
@@ -308,13 +251,7 @@ def create_langchain_documents(found_files, collection_name):
                 if documents:
                     Milvus.from_documents(documents, embeddings, collection_name=collection_name,
                                           connection_args={'uri': "http://localhost:19530"})
-            # Insert user access
-            if (COUNT & 1):
-                db_utility.insert_user_access(users_ps_no_odd, file, 'YES', message, collection_name)
-            else:
-                db_utility.insert_user_access(users_ps_no_even, file, 'YES', message, collection_name)
-
-            COUNT += 1
+            db_utility.insert_user_access(file, 'YES', message, collection_name)
 
         # Yield progress as percentage and current file progress
         progress_percentage = (file_index + 1) / len(found_files) * 100

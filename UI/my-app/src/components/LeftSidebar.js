@@ -29,9 +29,8 @@ function LeftSidebar({ history, onHistoryClick, onFileSelect, onLogout, setSelec
   // Fetch options from the backend API
   useEffect(() => {
     const fetchOptions = async () => {
-      const ps_numer= sessionStorage.getItem('userName')
       try {
-        const response = await fetch(`${apiUrl}/api/documents_by_ps_number/${ps_numer}/`, {
+        const response = await fetch(`${apiUrl}/api/documents/`, {
           method: 'GET',
           headers: {
             'Authorization': `Bearer ${sessionStorage.getItem('authToken')}`, // Include the auth token here

@@ -9,26 +9,26 @@ from .globals import global_collection_name
 from .models import CurrentUsingCollection
 
 MODEL_NAME = "meta-llama/Llama-3.2-3B"
-# MILVUS_COLLECTION = 'January'
+MILVUS_COLLECTION = 'ram_test'
 device = "cuda"
 
-def get_current_using_collection_value():
-    try:
-        current_collection = CurrentUsingCollection.objects.first()  
-        if current_collection:
-            # Assign the collection name to a variable
-            collection_name = current_collection.current_using_collection
-            return str(collection_name)
-        else:
-            return None 
-    except Exception as e:
-        return str(e) 
+# def get_current_using_collection_value():
+#     try:
+#         current_collection = CurrentUsingCollection.objects.first()  
+#         if current_collection:
+#             # Assign the collection name to a variable
+#             collection_name = current_collection.current_using_collection
+#             return str(collection_name)
+#         else:
+#             return None 
+#     except Exception as e:
+#         return str(e) 
 
-collection_name = get_current_using_collection_value()
+# collection_name = get_current_using_collection_value()
 
-if collection_name:
-    MILVUS_COLLECTION = collection_name
-    print("MILVUS_COLLECTION:",MILVUS_COLLECTION)
+# if collection_name:
+#     MILVUS_COLLECTION = collection_name
+#     print("MILVUS_COLLECTION:",MILVUS_COLLECTION)
 
 def load_model_and_tokenizer():
     model = AutoModelForCausalLM.from_pretrained(MODEL_NAME,token='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').to(device)
