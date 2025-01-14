@@ -5,30 +5,35 @@ import os
 from datetime import datetime, timedelta
 import glob
 import uuid
+import subprocess
+import urllib.parse
 import threading
 import mysql.connector
+from pymilvus import connections, Collection, MilvusClient
 from django.http import JsonResponse, StreamingHttpResponse, FileResponse, Http404
 from django.contrib.auth import authenticate
 from django.utils import timezone
+from django.db import connection
 from django.db.models import Min
+from django.views.decorators.csrf import csrf_exempt
 from rest_framework import status
 from rest_framework.decorators import api_view, permission_classes
 from rest_framework.permissions import AllowAny, IsAuthenticated
 from rest_framework.response import Response
 from rest_framework_simplejwt.tokens import RefreshToken
-from .models import PromptHistory
-from .serializers import PromptHistorySerializer
-from django.views.decorators.csrf import csrf_exempt
-from pymilvus import connections, Collection, MilvusClient
+from rest_framework.permissions import IsAuthenticated
+from .models import PromptHistory, CurrentUsingCollection
+from .serializers import PromptHistorySerializer, CurrentUsingCollectionSerializer
 from .api import process_query, get_all_files_from_milvus,get_all_folders_from_milvus
 from .Chunking_UI import file_process
-from django.db import connection
-from rest_framework.decorators import api_view, permission_classes
-import urllib.parse
-from rest_framework.decorators import api_view, permission_classes
-from rest_framework.permissions import IsAuthenticated
 from .Chunking_UI import enable_logging
 from .Chunking_UI import db_utility 
+
+# Initialize Milvus client
+client = MilvusClient(uri="http://localhost:19530", token="root:Milvus")
+
+# Global variable to store progress
+progress_data = {"message": "Starting upload..."}
 
 DEFAULT_PAGE_SIZE = 150
 PDF_DIRECTORY = config('PDF_DIRECTORY')
@@ -79,15 +84,15 @@ def cohere_generate(request):
         session_id = data.get('session_id') or str(uuid.uuid4())
         file_names = data.get('file_names', [])
         jwt_token = data.get('jwt_token', '')
-        folder_path= data.get('selectedFolderPath', '')
-        folder_path= data.get('selectedFolderPath', '')
+        # folder_path= data.get('selectedFolderPath', '')
+        # folder_path= data.get('selectedFolderPath', '')
         
         # Print debug statements
         print('prompt:', prompt)
         print('jwt_token:', jwt_token)
-        print('folder_path:',folder_path)
-        print('folder_path:',folder_path)
-
+        print('folder_path:',file_names)
+        # print('folder_path:',folder_path)
+# 
         # Create a placeholder PromptHistory entry
         prompt_history_entry = PromptHistory.objects.create(
             user=request.user,
@@ -258,7 +263,7 @@ def get_documents(request):
     try:
         # Get the current collection name
         current_collection = CurrentUsingCollection.objects.first()  
-        collection_name=current_collection.cohere_app_currentusingcollection
+        collection_name=current_collection.current_using_collection
         if not collection_name:
             return JsonResponse({'error': 'No current collection found'}, status=404)
 
@@ -459,15 +464,6 @@ def delete_file(request, source, collection_name):
     return JsonResponse({"error": "Invalid request method"}, status=405)
 
 
-
-
-# Initialize Milvus client
-client = MilvusClient(uri="http://localhost:19530", token="root:Milvus")
-
-# Global variable to store progress
-progress_data = {"message": "Starting upload..."}
-
-
 def set_progress_message(message):
     """
     Update the global progress message
@@ -643,19 +639,12 @@ def update_current_collection(request):
     }, status=200)
 
 
-# myapp/views.py
-import os
-import sys
-from django.http import JsonResponse
-from django.views.decorators.csrf import csrf_exempt
-import subprocess
-
 
 @csrf_exempt
 def restart_server(request):
     if request.method == 'GET':
         try:
-            subprocess.Popen(['python3', 'manage.py', 'runserver', '8001'])
+            subprocess.Popen(['python3', 'manage.py', 'runserver', '8000'])
 
             # Get the current process ID and kill it
             pid = os.getpid()

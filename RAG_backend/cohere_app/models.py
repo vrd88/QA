@@ -18,13 +18,6 @@ class PromptHistory(models.Model):
     
     
 
-class UserAccess(models.Model):
-    document_name = models.TextField() 
-    class Meta:
-        db_table = 'user_access'  # Map to the existing table
-        managed = False  # Django won't try to create or modify this table
-
-
 
 class CurrentUsingCollection(models.Model):
     current_using_collection = models.CharField(max_length=255, unique=True)

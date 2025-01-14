@@ -105,7 +105,7 @@ def insert_user_access( document_source, chunking_status, message, collection_na
 
     insert_query = f'''
     INSERT INTO user_access_{collection_name} (document_name, chunking_status, message) 
-    VALUES (%s, %s, %s, %s);
+    VALUES (%s, %s, %s);
     '''
     cursor.execute(insert_query, (document_source, chunking_status, message))
     connection.commit()

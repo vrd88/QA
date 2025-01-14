@@ -234,6 +234,8 @@ def create_langchain_documents(found_files, collection_name):
     COUNT = 0
 
     db_utility.create_user_access(collection_name)
+    db_utility.chunking_monitor()
+    db_utility.create_error_files()
 
     # Process found files
     for file_index, file in enumerate(found_files):
@@ -251,8 +253,10 @@ def create_langchain_documents(found_files, collection_name):
                 if documents:
                     Milvus.from_documents(documents, embeddings, collection_name=collection_name,
                                           connection_args={'uri': "http://localhost:19530"})
+           
+                
             db_utility.insert_user_access(file, 'YES', message, collection_name)
-
+                
         # Yield progress as percentage and current file progress
         progress_percentage = (file_index + 1) / len(found_files) * 100
         yield {"progress_percentage": progress_percentage, "current_progress": file_index + 1, "total_files": len(found_files)}

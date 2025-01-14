@@ -7,32 +7,35 @@ from pymilvus import connections, Collection
 import os
 from .globals import global_collection_name
 from .models import CurrentUsingCollection
+import re
 
 MODEL_NAME = "meta-llama/Llama-3.2-3B"
-MILVUS_COLLECTION = 'ram_test'
+MILVUS_COLLECTION = 'QC_Collection'
 device = "cuda"
 
-# def get_current_using_collection_value():
-#     try:
-#         current_collection = CurrentUsingCollection.objects.first()  
-#         if current_collection:
-#             # Assign the collection name to a variable
-#             collection_name = current_collection.current_using_collection
-#             return str(collection_name)
-#         else:
-#             return None 
-#     except Exception as e:
-#         return str(e) 
+def get_current_using_collection_value():
+    try:
+        current_collection = CurrentUsingCollection.objects.first()  
+        if current_collection:
+            # Assign the collection name to a variable
+            collection_name = current_collection.current_using_collection
+            return str(collection_name)
+        else:
+            return None 
+    except Exception as e:
+        return str(e) 
 
-# collection_name = get_current_using_collection_value()
+collection_name = get_current_using_collection_value()
 
-# if collection_name:
-#     MILVUS_COLLECTION = collection_name
-#     print("MILVUS_COLLECTION:",MILVUS_COLLECTION)
+if collection_name:
+    MILVUS_COLLECTION = collection_name
+
+#TODO - remove this
+MILVUS_COLLECTION = 'QC_Collection'
 
 def load_model_and_tokenizer():
-    model = AutoModelForCausalLM.from_pretrained(MODEL_NAME,token='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').to(device)
-    tokenizer = AutoTokenizer.from_pretrained(MODEL_NAME,token = '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')
+    model = AutoModelForCausalLM.from_pretrained(MODEL_NAME,token='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').to(device)
+    tokenizer = AutoTokenizer.from_pretrained(MODEL_NAME,token = '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')
     return model, tokenizer
 
 model, tokenizer = load_model_and_tokenizer()
@@ -42,26 +45,38 @@ collection = Collection(MILVUS_COLLECTION)
 collection.load()
 embedding_model = SentenceTransformer('all-MiniLM-L6-v2')
 
+def clean_string(input_string):
+    cleaned_string = re.sub(r'\s+', ' ', input_string)
+    cleaned_string = cleaned_string.strip()
+    return cleaned_string
+
 def generate_streaming_response(input_text):
-    # print("Received in stream",input_text)
     inputs = tokenizer(input_text, return_tensors="pt").to(device)
     streamer = TextIteratorStreamer(tokenizer, skip_prompt=True, skip_special_tokens=True)
     thread = Thread(target=model.generate,
                     kwargs={
                         "input_ids": inputs['input_ids'],
                         "streamer": streamer,
-                        "max_new_tokens": 512,
-                        "do_sample": False,
-                        "temperature": 0.5
+                        "max_new_tokens": 128,
+                        "temperature": 0.4
                     })
-    print("Starting the generation thread...")
     thread.start()
 
     for new_text in streamer:
         if new_text.strip():
             yield new_text
     thread.join()
-    print("Thread has completed.")
+
+def generate_response(input_text):
+    inputs = tokenizer(input_text, return_tensors="pt").to(device)
+    output_tokens = model.generate(
+        **inputs, 
+        max_new_tokens=256,
+        temperature=0.3,
+    )
+    
+    output_text = tokenizer.decode(output_tokens[0], skip_special_tokens=True)
+    return output_text
 
 user_sessions = {}
 search_params = {"metric_type": "L2", "params": {"ef": 30}}
@@ -127,29 +142,31 @@ def process_query(user_input, selected_file, system_id, batch_size=5):
         )
         current_question = session['last_query'] if user_input.lower() == "continue" else user_input
         # Create the response prompt
-        template = """
-        Use the provided context to generate a precise and accurate answer to the question below.
-        Context:
+        template = f"""
+        You are an AI assistant designed to assist users by providing simple and clear answers to their questions.
+        
+        ### User Question:
+        {current_question}
+        
+        Refer to the information below for support:
+        ### Context:
         {context}
 
-        Question:
-        {question}
+        INSTRUCTIONS:
+        - Avoid repeating the same phrase or sentence multiple times.
+        - Answer the user Question in very brief manner without elaborate.
+        - Make the answer so precise without saying about any steps to comeup with the answer.
 
-        Guidelines for Response:
-           - Base the response on the provided context when applicable.
-           - If the context does not address the question, state that explicitly and offer to help clarify or explore related next steps.
-           - Avoid unnecessary elaboration, repetition, or irrelevant details.
-           - Make the answers compact for user understanding.
-        Answer:
+        Provide a concise response unless the user requests more details.
         """
+
+
         prompt = PromptTemplate(template=template, input_variables=["context", "question"])
         final_prompt = prompt.format(context=context, question=current_question)
         print(final_prompt)
-        # Generate the response based on the prompt
-        for chunk in generate_streaming_response(final_prompt):
-            yield chunk
-
-        # Yield the sources for the current batch
+        # for chunk in generate_streaming_response(final_prompt):
+        #     yield chunk
+        yield generate_response(final_prompt)
         sources = [
             f"Source: {hit.entity.get('source')} | Page: {hit.entity.get('page')}"
             for hit in batch_results
@@ -177,7 +194,6 @@ def get_all_files_from_milvus():
     for result in results:
         database_files.append(result['source'])
     database_files = list(set(database_files))
-    print(database_files)
     connections.disconnect("default")
     return database_files
 
