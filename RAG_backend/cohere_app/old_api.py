@@ -8,10 +8,43 @@ import os
 from .globals import global_collection_name
 from .models import CurrentUsingCollection
 import re
+from langchain_groq import ChatGroq
+import time
 
-MODEL_NAME = "google/gemma-2-2b-it"
+def generate_response(prompt: str):
+
+    api_keys = [
+    "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",
+    "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",
+    "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",
+    "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",
+    "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",
+    "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",
+    "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",
+    ]
+
+    # Initialize ChatGroq parameters
+    model_name = "llama-3.3-70b-versatile"
+
+    for api_key in api_keys:
+        try:
+            llm = ChatGroq(model_name=model_name, api_key=api_key)
+            messages = [
+                (
+                    "system",
+                    "You are a helpful assistant.",
+                ),
+                ("human", f"{prompt}"),
+            ]
+            ai_msg = llm.invoke(messages)
+            return ai_msg.content
+        except Exception as e:
+            time.sleep(1)
+
+    # If all keys fail
+    raise Exception("All API keys have failed. Please check your API keys or service status.")
+
 MILVUS_COLLECTION = 'QC_Collection'
-device = "cuda"
 
 def get_current_using_collection_value():
     try:
@@ -33,12 +66,6 @@ if collection_name:
 #TODO - remove this
 MILVUS_COLLECTION = 'QC_Collection'
 
-def load_model_and_tokenizer():
-    model = AutoModelForCausalLM.from_pretrained(MODEL_NAME,token='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').to(device)
-    tokenizer = AutoTokenizer.from_pretrained(MODEL_NAME,token = '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')
-    return model, tokenizer
-
-model, tokenizer = load_model_and_tokenizer()
 
 connections.connect("default", host="localhost", port="19530")
 collection = Collection(MILVUS_COLLECTION)
@@ -50,38 +77,38 @@ def clean_string(input_string):
     cleaned_string = cleaned_string.strip()
     return cleaned_string
 
-def generate_streaming_response(input_text):
-    inputs = tokenizer(input_text, return_tensors="pt").to(device)
-    streamer = TextIteratorStreamer(tokenizer, skip_prompt=True, skip_special_tokens=True)
-    thread = Thread(target=model.generate,
-                    kwargs={
-                        "input_ids": inputs['input_ids'],
-                        "streamer": streamer,
-                        "max_new_tokens": 256,
-                        "temperature": 0.4
-                    })
-    thread.start()
+# def generate_streaming_response(input_text):
+#     inputs = tokenizer(input_text, return_tensors="pt").to(device)
+#     streamer = TextIteratorStreamer(tokenizer, skip_prompt=True, skip_special_tokens=True)
+#     thread = Thread(target=model.generate,
+#                     kwargs={
+#                         "input_ids": inputs['input_ids'],
+#                         "streamer": streamer,
+#                         "max_new_tokens": 128,
+#                         "temperature": 0.4
+#                     })
+#     thread.start()
 
-    for new_text in streamer:
-        if new_text.strip():
-            yield new_text
-    thread.join()
+#     for new_text in streamer:
+#         if new_text.strip():
+#             yield new_text
+#     thread.join()
 
-def generate_response(input_text):
-    inputs = tokenizer(input_text, return_tensors="pt").to(device)
-    output_tokens = model.generate(
-        **inputs, 
-        max_new_tokens=256,
-        temperature=0.3,
-    )
+# def generate_response(input_text):
+#     inputs = tokenizer(input_text, return_tensors="pt").to(device)
+#     output_tokens = model.generate(
+#         **inputs, 
+#         max_new_tokens=256,
+#         temperature=0.3,
+#     )
     
-    output_text = tokenizer.decode(output_tokens[0], skip_special_tokens=True)
-    return output_text
+#     output_text = tokenizer.decode(output_tokens[0], skip_special_tokens=True)
+#     return output_text
 
 user_sessions = {}
 search_params = {"metric_type": "L2", "params": {"ef": 30}}
 
-def process_query(user_input, selected_file, system_id, batch_size=3):
+def process_query(user_input, selected_file, system_id, batch_size=2):
     connections.connect("default", host="localhost", port="19530")
     try:
         # Initialize session if not already present
@@ -153,20 +180,16 @@ def process_query(user_input, selected_file, system_id, batch_size=3):
         {context}
 
         INSTRUCTIONS:
-        - Avoid repeating the same phrase or sentence multiple times.
-        - Answer the user Questionas simple as possible.
-        - Context is generated from database so user is not aware about context, so understand the user question and respond to it.
-
-        Provide a concise response unless the user requests more details.
+            - your response should adhere one lead to the context without adding anything else
+            - Make your response as cool
         """
 
 
         prompt = PromptTemplate(template=template, input_variables=["context", "question"])
         final_prompt = prompt.format(context=context, question=current_question)
-        print(final_prompt)
-        for chunk in generate_streaming_response(final_prompt):
-            yield chunk
-        # yield generate_response(final_prompt)
+        # for chunk in generate_streaming_response(final_prompt):
+        #     yield chunk
+        yield generate_response(final_prompt)
         sources = [
             f"Source: {hit.entity.get('source')} | Page: {hit.entity.get('page')}"
             for hit in batch_results

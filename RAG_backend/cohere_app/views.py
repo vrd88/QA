@@ -70,7 +70,6 @@ def logout_user(request):
         token.blacklist()
         
         return Response({"message": "Logout successful"}, status=status.HTTP_200_OK)
-        return Response({"message": "Logout successful"}, status=status.HTTP_200_OK)
     except Exception as e:
         return Response({"error": "Invalid token or logout failed"}, status=status.HTTP_400_BAD_REQUEST)
 
@@ -253,12 +252,14 @@ def mark_unsatisfied(request, pk):
 
 
 @api_view(['GET'])
+@permission_classes([IsAuthenticated])
 def get_files(request):
     files = get_all_files_from_milvus()  
     return JsonResponse({"files":files}) 
 
 
 @api_view(['GET'])
+@permission_classes([IsAuthenticated])
 def get_documents(request):
     try:
         # Get the current collection name
@@ -285,7 +286,8 @@ def get_documents(request):
     except Exception as e:
         return JsonResponse({'error': str(e)}, status=500)
 
-
+@api_view(['POST'])
+@permission_classes([IsAuthenticated])
 def serve_pdf(request, filename, page_number):
     file_path = os.path.join(PDF_DIRECTORY, filename)
     
@@ -323,17 +325,18 @@ def serve_pdf(request, filename, page_number):
 
 
 @api_view(['GET'])
+@permission_classes([IsAuthenticated])
 def get_folder(request):
     folder = get_all_folders_from_milvus()  
     return JsonResponse({"folder":folder}) 
 
 
 # admin page
-@csrf_exempt  
+@csrf_exempt 
+@api_view(['GET'])
+@permission_classes([IsAuthenticated])
 def get_collection_name(request):
     try:
-        # Connect to the Milvus server
-        client = MilvusClient(uri="http://localhost:19530", token="root:Milvus")
         
         # List collections
         collections = client.list_collections()
@@ -344,6 +347,8 @@ def get_collection_name(request):
 
 
 @csrf_exempt  
+@api_view(['GET'])
+@permission_classes([IsAuthenticated])
 def collection_files(request, collection_name):
     if request.method == 'GET':
         try:
@@ -375,26 +380,22 @@ def collection_files(request, collection_name):
     return JsonResponse({"error": "Invalid request method"}, status=405)
 
 
-@csrf_exempt  
+@csrf_exempt 
+@api_view(['DELETE'])
+@permission_classes([IsAuthenticated]) 
 def delete_collection(request, collection_name):
     try:
-        # Connect to Milvus
-        client = MilvusClient(uri="http://localhost:19530", token="root:Milvus")
         
         # Delete the collection
         client.drop_collection(collection_name)
- # Step 2: Delete the corresponding table in MySQL
-        connection = mysql.connector.connect(
-        host="localhost",
-        user="root",
-        password="Passw0rd@123",
-        database="SDC"
-    )
+        # Step 2: Delete the corresponding table in MySQL
+        connection = db_utility.create_connection()
+       
         cursor = connection.cursor()
 
         # Construct the table name
         table_name = f"user_access_{collection_name}"
-        drop_table_query = f"DROP TABLE IF EXISTS `{table_name}`;"  # Use backticks for safety
+        drop_table_query = f"DROP TABLE IF EXISTS `{table_name}`;"  
         
         # Execute the query to drop the table
         cursor.execute(drop_table_query)
@@ -402,7 +403,6 @@ def delete_collection(request, collection_name):
         cursor.close()
         connection.close()
         
-        # Return success response
         return JsonResponse({"message": f"Collection '{collection_name}' deleted successfully."}, status=200)
     except Exception as e:
         return JsonResponse({"error": str(e)}, status=500)
@@ -410,6 +410,7 @@ def delete_collection(request, collection_name):
 
 @csrf_exempt
 @api_view(['DELETE'])
+@permission_classes([IsAuthenticated]) 
 def delete_file(request, source, collection_name):
     if request.method == 'DELETE':
         try:
@@ -420,27 +421,18 @@ def delete_file(request, source, collection_name):
             # Connect to Milvus
             connections.connect("default", host='localhost', port='19530')
 
-            # Access the collection
             collection = Collection(collection_name)
               # URL Decode the source (since it's URL-encoded)
             decoded_source = urllib.parse.unquote(source)
-            print("Decoded source:", decoded_source)
 
             # Construct delete expression based on the provided source (file name)
             delete_expr = f"source == '{decoded_source}'" 
-            # delete_expr = f"source LIKE '%{source}%'"
 
-            # Perform the deletion
             result = collection.delete(expr=delete_expr)
 
-            
             # Connect to MySQL to delete the corresponding row
-            connection = mysql.connector.connect(
-                host="localhost",
-                user="root",
-                password="Passw0rd@123",
-                database="SDC"
-            )
+            connection = db_utility.create_connection()
+
             cursor = connection.cursor()
 
             # Construct the query to delete the row where document_name matches the source
@@ -553,6 +545,7 @@ def get_progress(request):
 
 
 @api_view(["GET"])
+@permission_classes([IsAuthenticated]) 
 def get_milvus_data(request, collection_name):
     # Connect to Milvus
     connections.connect(alias="default", host="localhost", port="19530")
@@ -599,6 +592,7 @@ def get_milvus_data(request, collection_name):
 
 
 @api_view(["GET"])
+@permission_classes([IsAuthenticated]) 
 def get_current_using_collection(request):
     try:
         current_collection = CurrentUsingCollection.objects.first()  # Assuming there's only one record
@@ -611,10 +605,10 @@ def get_current_using_collection(request):
         return Response({"error": f"Error fetching current collection: {str(e)}"}, status=500)
 
 
-# cohere_app/views.py
-from .globals import global_collection_name  # Import the global variable
+from .globals import global_collection_name 
 
 @api_view(["POST"])
+@permission_classes([IsAuthenticated]) 
 def update_current_collection(request):
     global global_collection_name  # Declare to modify the global variable
 
@@ -641,6 +635,8 @@ def update_current_collection(request):
 
 
 @csrf_exempt
+@api_view(["GET"])
+@permission_classes([IsAuthenticated]) 
 def restart_server(request):
     if request.method == 'GET':
         try:
