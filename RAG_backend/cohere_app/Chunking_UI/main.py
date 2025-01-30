@@ -38,7 +38,7 @@ if(create_error_files_table == False):
 
 collection_name = input("Type the collection name : ")
 source_folder = input("Folder path : ")
-create_user_access_table = db_utility.create_user_access()
+create_user_access_table = db_utility.create_user_access(collection_name)
 
 if(create_user_access_table == False):
     logger.error("Error encountered at creating the user access table")

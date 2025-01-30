@@ -1,52 +1,41 @@
-import os
 import re
 from tqdm import tqdm
 import fitz
 from langchain_core.documents import Document
-from concurrent.futures import ThreadPoolExecutor, as_completed
 from pptx import Presentation
 from docx import Document as DocxDocument
 import openpyxl
 import csv
-import json
 from langchain_community.vectorstores import Milvus
 from langchain_huggingface import HuggingFaceEmbeddings
-import shutil
 from .enable_logging import logger 
 from cohere_app.Chunking_UI import db_utility
 from doctr.io import DocumentFile
 from doctr.models import ocr_predictor
 
-# global varibales declarations
-
 embeddings = HuggingFaceEmbeddings(model_name='sentence-transformers/all-MiniLM-L6-v2', model_kwargs={'device': "cuda"})
 model = ocr_predictor(pretrained=True)
 model = model.to('cuda')
 OCR_LIST = []
-ERROR_FOLDER = "error_files"
-
-# with open('user_access.json', 'r') as f:
-#     user_data = json.load(f)
-
 
 def extract_text_pdf(pdf_path):
     text_by_page = []
     try:
         pdf = fitz.open(pdf_path)
     except Exception as e:
-        return [], "Can't open the file"
+        return [], "Can't open the file ERROR"
     for page_num in range(len(pdf)):
         page = pdf[page_num]
         text = page.get_text()
         # we need to clean the text here.
         if not text:
             OCR_LIST.append(pdf_path)
-            return [], "OCR required"
+            return [], "OCR required - ERROR"
         else:
-            text_by_page.append((page_num, text));
+            text_by_page.append((page_num, text))
     return text_by_page, "Text extraction done"
 
-def extract_text_with_ocr(pdf_path):
+def process_ocr_document(pdf_path):
     """ Extract text using OCR from each page of the PDF """
     try:
         """ Extract text using OCR from each page of the PDF """
@@ -143,50 +132,49 @@ def clean_text(text):
 
 
 def read_and_split_text(text_by_page, min_chunk_size=800, max_chunk_size=1200):
-    """ Split text into chunks, respecting page boundaries """
+    """ Advanced text chunking with intelligent merging and splitting """
     chunks = []
-    current_chunk = ""
-    current_page = 1
 
-    def process_chunk(chunk_text, page_number):
-        nonlocal chunks, current_chunk
-        sentences = re.split(r'(?<=[.!?])\s+', chunk_text)
-        temp_chunk = ""
+    def smart_chunk_processing(text, page_number):
+        sentences = max([re.split(r'(?<=[.!?])\s+', text), re.split(r'\n', text)], key=len)
+        current_chunk = ""
+        processed_chunks = []
+
         for sentence in sentences:
-            if len(temp_chunk) + len(sentence) + 1 > max_chunk_size:
-                if len(temp_chunk) >= min_chunk_size:
-                    chunks.append((temp_chunk.strip(), page_number))
-                    temp_chunk = sentence
+            if len(sentence) > max_chunk_size:
+                while sentence:
+                    chunk = sentence[:max_chunk_size]
+                    processed_chunks.append(chunk)
+                    sentence = sentence[max_chunk_size:]
+                current_chunk = ""
+                continue
+
+            potential_chunk = (current_chunk + " " + sentence).strip()
+            
+            if len(potential_chunk) > max_chunk_size:
+                if len(current_chunk) >= min_chunk_size:
+                    processed_chunks.append(current_chunk)
+                    current_chunk = sentence
                 else:
-                    temp_chunk += " " + sentence
+                    current_chunk = potential_chunk[:max_chunk_size]
+            
+            elif len(potential_chunk) >= min_chunk_size:
+                current_chunk = potential_chunk
+            
             else:
-                temp_chunk += " " + sentence
+                current_chunk = potential_chunk
+
+        if current_chunk and len(current_chunk) >= min_chunk_size:
+            processed_chunks.append(current_chunk)
         
-        if len(temp_chunk) >= min_chunk_size:
-            chunks.append((temp_chunk.strip(), page_number))
-        elif chunks:
-            chunks[-1] = (chunks[-1][0] + " " + temp_chunk.strip(), page_number)
+        return [(chunk, page_number) for chunk in processed_chunks]
+
 
     for page_num, page_text in text_by_page:
-        if page_num != current_page:
-            process_chunk(current_chunk, current_page)
-            current_page = page_num
-            current_chunk = page_text
-        else:
-            current_chunk += " " + page_text
-    process_chunk(current_chunk, current_page)
+        page_chunks = smart_chunk_processing(page_text, page_num)
+        chunks.extend(page_chunks)
+
     return chunks
-
-
-def move_file_to_error(file_path):
-    """ Move failed files to the error folder """
-    try:
-        os.makedirs(ERROR_FOLDER, exist_ok=True)
-        error_file_path = os.path.join(ERROR_FOLDER, os.path.basename(file_path))
-        shutil.copy(file_path, error_file_path)
-        logger.error(f"Moved {file_path} to error folder: {ERROR_FOLDER}")
-    except Exception as e:
-        logger.error(f"Failed to move {file_path} to error folder: {e}")
 
 
 def process_document(file_path):
@@ -207,21 +195,8 @@ def process_document(file_path):
         elif file_path.endswith('.csv'):
             text_by_page, message = process_csv(file_path)
         return text_by_page, message
-    
+    #TODO - i dont think so this except requires to store the error files
     except Exception as e:
-        logger.error(f"Error processing document {file_path}\n{e}")
-        db_utility.store_error_files_with_error(file_path)
-        move_file_to_error(file_path)  # Move failed file to the error folder
-        return [], f"Error processing document {file_path}\n{e}"
-
-
-def process_ocr_document(file_path):
-    """ Process OCR-based document """
-    try:
-        text_by_page = extract_text_with_ocr(file_path)
-        return [(page_num, f"{text}\nThe standard and the year of the standard is: {file_path}") for page_num, text in text_by_page]
-    except Exception as e:
-        logger.exception(f"Error processing OCR document {file_path}")
         return [], f"Error processing document {file_path}\n{e}"
 
 def create_langchain_documents(found_files, collection_name):
@@ -231,33 +206,33 @@ def create_langchain_documents(found_files, collection_name):
     This function processes PDF, PPTX, DOCX, TXT, XLSX, and CSV files in parallel.
     If a PDF requires OCR processing (no text found), it's handled sequentially.
     """
-    COUNT = 0
-
     db_utility.create_user_access(collection_name)
     db_utility.chunking_monitor()
-    db_utility.create_error_files()
+    db_utility.create_error_files(collection_name)
 
     # Process found files
     for file_index, file in enumerate(found_files):
-        text_by_page, message = process_document(file)  # Get the result of the future
-        if text_by_page:
-            # users_ps_no_even = "['123', '124']"
-            # users_ps_no_odd = "['125', '126']"
+        text_by_page, message = process_document(file)
+        if text_by_page and 'error' not in message.lower():
             chunks = read_and_split_text(text_by_page)
+            logger.info(f"current processing file {file} with {len(str(chunks))}")
+            if len(str(chunks)) > 5:
+                for chunk, page_num in chunks:
+                    documents = []
+                    doc = Document(page_content=chunk, metadata={'source': file, 'page': str(page_num)})
+                    documents.append(doc)
 
-            for chunk, page_num in chunks:
-                documents = []
-                doc = Document(page_content=chunk, metadata={'source': file, 'page': str(page_num)})
-                documents.append(doc)
-
-                if documents:
-                    Milvus.from_documents(documents, embeddings, collection_name=collection_name,
-                                          connection_args={'uri': "http://localhost:19530"})
-           
-                
-            db_utility.insert_user_access(file, 'YES', message, collection_name)
-                
-        # Yield progress as percentage and current file progress
+                    if documents:
+                        Milvus.from_documents(documents, embeddings, collection_name=collection_name,
+                                            connection_args={'uri': "http://localhost:19530"})
+            
+                    
+                db_utility.insert_user_access(file, 'YES', message, collection_name)
+            else:
+                db_utility.store_error_files_with_error(collection_name, file, "Too small chunk size -- document skipped")
+        elif "error" in message.lower() and "ocr" not in message.lower():
+            db_utility.store_error_files_with_error(collection_name, file, message)
+            logger.error(f"Error in the document - Skipping {file}")
         progress_percentage = (file_index + 1) / len(found_files) * 100
         yield {"progress_percentage": progress_percentage, "current_progress": file_index + 1, "total_files": len(found_files)}
 
@@ -268,14 +243,15 @@ def create_langchain_documents(found_files, collection_name):
         text_by_page, message = process_ocr_document(ocr_file)
         if text_by_page:
             chunks = read_and_split_text(text_by_page)
-            for chunk, page_num in chunks:
-                documents = []
-                doc = Document(page_content=chunk, metadata={'source': ocr_file, 'page': str(page_num)})
-                documents.append(doc)
-                if documents:
-                    Milvus.from_documents(documents, embeddings, collection_name=collection_name,
-                                          connection_args={'uri': "http://localhost:19530"})
-
-        # Yield progress as percentage and current file progress
+            logger.info(f"current processing file {file} with {len(str(chunks))}")
+            if len(str(chunks)) > 5:
+                for chunk, page_num in chunks:
+                    documents = []
+                    doc = Document(page_content=chunk, metadata={'source': ocr_file, 'page': str(page_num)})
+                    documents.append(doc)
+                    if documents:
+                        Milvus.from_documents(documents, embeddings, collection_name=collection_name,
+                                            connection_args={'uri': "http://localhost:19530"})
+                db_utility.update_ocr_status(ocr_file, collection_name)
         progress_percentage = (ocr_file_index + 1) / len(OCR_LIST) * 100
         yield {"progress_percentage": progress_percentage, "current_progress": ocr_file_index + 1, "total_files": len(OCR_LIST)}

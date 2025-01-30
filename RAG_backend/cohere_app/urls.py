@@ -12,10 +12,7 @@ urlpatterns = [
     path('mark_satisfied/<int:pk>/', mark_satisfied, name='mark_satisfied'),
     path('mark_unsatisfied/<int:pk>/', mark_unsatisfied, name='mark_unsatisfied'),
     path('documents/', get_documents),
-    path('serve-pdf/<str:filename>/<int:page_number>/', serve_pdf, name='serve_pdf'),
-    # path('folder_name/',get_folder),
-    # path('documents_by_ps_number', get_documents, name='get_documents_by_ps_number'),
-
+    path('serve-pdf/<path:filename>/<int:page_number>/', serve_pdf, name='serve_pdf'),
     path('collections/', get_collection_name, name='get_collections'),
     path('collections/<str:collection_name>/files/', collection_files, name='collection-files'),
     path('collections/<str:collection_name>/delete/', delete_collection, name='delete-collection'),

@@ -1,6 +1,5 @@
 from threading import Thread
 from transformers import AutoTokenizer, AutoModelForCausalLM, TextIteratorStreamer
-from langchain.prompts import PromptTemplate
 from sentence_transformers import SentenceTransformer
 from functools import lru_cache 
 from pymilvus import connections, Collection
@@ -9,8 +8,8 @@ from .globals import global_collection_name
 from .models import CurrentUsingCollection
 import re
 
-MODEL_NAME = "google/gemma-2-2b-it"
-MILVUS_COLLECTION = 'QC_Collection'
+MODEL_NAME = "/home/aicoe/Desktop/QA/my_saved_model"
+# MILVUS_COLLECTION = 'VPC'
 device = "cuda"
 
 def get_current_using_collection_value():
@@ -30,12 +29,10 @@ collection_name = get_current_using_collection_value()
 if collection_name:
     MILVUS_COLLECTION = collection_name
 
-#TODO - remove this
-MILVUS_COLLECTION = 'QC_Collection'
 
 def load_model_and_tokenizer():
-    model = AutoModelForCausalLM.from_pretrained(MODEL_NAME,token='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').to(device)
-    tokenizer = AutoTokenizer.from_pretrained(MODEL_NAME,token = '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')
+    model = AutoModelForCausalLM.from_pretrained(MODEL_NAME).to(device)
+    tokenizer = AutoTokenizer.from_pretrained(MODEL_NAME)
     return model, tokenizer
 
 model, tokenizer = load_model_and_tokenizer()
@@ -58,7 +55,7 @@ def generate_streaming_response(input_text):
                         "input_ids": inputs['input_ids'],
                         "streamer": streamer,
                         "max_new_tokens": 256,
-                        "temperature": 0.4
+                        "temperature": 0.3
                     })
     thread.start()
 
@@ -99,7 +96,7 @@ def process_query(user_input, selected_file, system_id, batch_size=3):
                 yield "No previous query found. Please enter a new question."
                 return
         
-            if session['current_index'] > len(session['results']):
+            elif session['current_index'] > len(session['results']):
                 yield "No more results to display."
                 return
         else:
@@ -129,7 +126,6 @@ def process_query(user_input, selected_file, system_id, batch_size=3):
                 all_hits.extend(hits)  # Collect all individual hit objects
             session['results'] = all_hits
             session['current_index'] = 0
-
         # Fetch the current batch of results
         start_index = session['current_index']
         end_index = start_index + batch_size
@@ -141,8 +137,9 @@ def process_query(user_input, selected_file, system_id, batch_size=3):
             for hit in batch_results
         )
         current_question = session['last_query'] if user_input.lower() == "continue" else user_input
+
         # Create the response prompt
-        template = f"""
+        final_prompt = f"""
         You are an AI assistant designed to assist users by providing simple and clear answers to their questions.
         
         ### User Question:
@@ -154,15 +151,12 @@ def process_query(user_input, selected_file, system_id, batch_size=3):
 
         INSTRUCTIONS:
         - Avoid repeating the same phrase or sentence multiple times.
-        - Answer the user Questionas simple as possible.
         - Context is generated from database so user is not aware about context, so understand the user question and respond to it.
+        - Your output should be the ### AI Assistant Response: 
 
         Provide a concise response unless the user requests more details.
         """
 
-
-        prompt = PromptTemplate(template=template, input_variables=["context", "question"])
-        final_prompt = prompt.format(context=context, question=current_question)
         print(final_prompt)
         for chunk in generate_streaming_response(final_prompt):
             yield chunk
@@ -196,24 +190,3 @@ def get_all_files_from_milvus():
     database_files = list(set(database_files))
     connections.disconnect("default")
     return database_files
-
-def get_all_folders_from_milvus():
-    connections.connect("default", host="localhost", port="19530")
-    collection = Collection(MILVUS_COLLECTION)
-    collection.load()
-    iterator = collection.query_iterator(batch_size=1000,output_fields=["source"])
-    results=[]
-    while True:
-        result = iterator.next()
-        if not result:
-            iterator.close()
-            break
-        results.extend(result)
-    database_locations = []
-    for result in results:
-        file_path = result['source']
-        directory = os.path.dirname(file_path)
-        database_locations.append(directory)
-    database_locations = list(set(database_locations))
-    connections.disconnect("default")
-    return database_locations

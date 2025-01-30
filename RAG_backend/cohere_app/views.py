@@ -8,7 +8,6 @@ import uuid
 import subprocess
 import urllib.parse
 import threading
-import mysql.connector
 from pymilvus import connections, Collection, MilvusClient
 from django.http import JsonResponse, StreamingHttpResponse, FileResponse, Http404
 from django.contrib.auth import authenticate
@@ -24,19 +23,15 @@ from rest_framework_simplejwt.tokens import RefreshToken
 from rest_framework.permissions import IsAuthenticated
 from .models import PromptHistory, CurrentUsingCollection
 from .serializers import PromptHistorySerializer, CurrentUsingCollectionSerializer
-from .api import process_query, get_all_files_from_milvus,get_all_folders_from_milvus
-from .Chunking_UI import file_process
-from .Chunking_UI import enable_logging
-from .Chunking_UI import db_utility 
+from .api import process_query, get_all_files_from_milvus
+from .Chunking_UI import file_process, db_utility
+from .Chunking_UI.enable_logging import logger
+from urllib.parse import unquote
 
-# Initialize Milvus client
 client = MilvusClient(uri="http://localhost:19530", token="root:Milvus")
-
-# Global variable to store progress
 progress_data = {"message": "Starting upload..."}
 
 DEFAULT_PAGE_SIZE = 150
-PDF_DIRECTORY = config('PDF_DIRECTORY')
 
 
 @api_view(['POST'])
@@ -62,13 +57,9 @@ def login_user(request):
 @permission_classes([IsAuthenticated])
 def logout_user(request):
     try:
-        # Get refresh token from request data
         refresh_token = request.data.get("refresh")
         token = RefreshToken(refresh_token)
-        
-        # Blacklist the refresh token
         token.blacklist()
-        
         return Response({"message": "Logout successful"}, status=status.HTTP_200_OK)
     except Exception as e:
         return Response({"error": "Invalid token or logout failed"}, status=status.HTTP_400_BAD_REQUEST)
@@ -83,16 +74,6 @@ def cohere_generate(request):
         session_id = data.get('session_id') or str(uuid.uuid4())
         file_names = data.get('file_names', [])
         jwt_token = data.get('jwt_token', '')
-        # folder_path= data.get('selectedFolderPath', '')
-        # folder_path= data.get('selectedFolderPath', '')
-        
-        # Print debug statements
-        print('prompt:', prompt)
-        print('jwt_token:', jwt_token)
-        print('folder_path:',file_names)
-        # print('folder_path:',folder_path)
-# 
-        # Create a placeholder PromptHistory entry
         prompt_history_entry = PromptHistory.objects.create(
             user=request.user,
             session_id=session_id,
@@ -101,41 +82,30 @@ def cohere_generate(request):
         )
         serializer = PromptHistorySerializer(prompt_history_entry)
         history_id = serializer.data['id']
-
-        # Generator function for streaming response
         def response_stream():
             collected_responses = []
 
-            # Stream partial responses from the process_query generator
             for partial_response in process_query(prompt, file_names, jwt_token):
                 collected_responses.append(partial_response)
 
                 yield partial_response
 
-            # Combine all collected responses for final response
             combined_response = "\n".join(collected_responses)
             yield "      "  # Final padding chunk
 
-            # Save the final response in the database (asynchronously in a separate thread)
             def save_to_database():
                 prompt_history_entry.response = combined_response
                 prompt_history_entry.save()
 
             threading.Thread(target=save_to_database).start()
-
-        # Create the StreamingHttpResponse with headers for ID, session_id, file names, and page numbers
         response = StreamingHttpResponse(
             response_stream(),
             content_type='text/plain',
             status=status.HTTP_200_OK
         )
-       
 
-        # Add custom headers for file names, page numbers, history ID, and session ID
         response['X-History-ID'] = str(history_id)
         response['X-Session-ID'] = session_id
-    
-        # Set CORS headers
         response['Access-Control-Allow-Origin'] = '*'
         response['Access-Control-Expose-Headers'] = 'X-History-ID, X-Session-ID, X-File-Names, X-Page-Numbers'
 
@@ -153,20 +123,14 @@ def get_prompt_history(request):
     yesterday = today - timedelta(days=1)
     last_week = today - timedelta(weeks=1)
     last_month = today - timedelta(weeks=4)
-
-    # Helper function to get first prompt per session for a given queryset
     def get_first_prompts(queryset):
         first_prompts = queryset.values('session_id').annotate(first_prompt_id=Min('id'))
         return PromptHistory.objects.filter(id__in=[fp['first_prompt_id'] for fp in first_prompts])
-
-    # Filter by date ranges for the authenticated user
     user_prompts = PromptHistory.objects.filter(user=request.user)
     history_today = get_first_prompts(user_prompts.filter(created_at__date=today))
     history_yesterday = get_first_prompts(user_prompts.filter(created_at__date=yesterday))
     history_last_week = get_first_prompts(user_prompts.filter(created_at__gte=last_week, created_at__lt=yesterday))
     history_last_month = get_first_prompts(user_prompts.filter(created_at__gte=last_month, created_at__lt=last_week))
-
-    # Serialize data
     history_data = {
         "today": PromptHistorySerializer(history_today.order_by('-created_at'), many=True).data,
         "yesterday": PromptHistorySerializer(history_yesterday.order_by('-created_at'), many=True).data,
@@ -197,12 +161,9 @@ def get_session_history(request, session_id):
 @permission_classes([IsAuthenticated])
 def save_comment(request, pk):
     try:
-        # Retrieve the PromptHistory object by the primary key (id)
         prompt_history = PromptHistory.objects.get(pk=pk, user=request.user)
         comment = request.data.get('comments', '')
-
         if comment:
-            # Save the comment if provided
             prompt_history.comments = comment
             prompt_history.save()
             return Response({"message": "Comment saved successfully"}, status=status.HTTP_200_OK)
@@ -219,13 +180,9 @@ def mark_satisfied(request, pk):
     Mark the feedback as satisfied.
     """
     try:
-        # Retrieve the PromptHistory object by the primary key (id)
         prompt_history = PromptHistory.objects.get(pk=pk, user=request.user)
-        
-        # Update the thumbs_feedback column to 'satisfied'
         prompt_history.thumbs_feedback = 'satisfied'
         prompt_history.save()
-        
         return Response({"message": "Feedback marked as satisfied."}, status=status.HTTP_200_OK)
     
     except PromptHistory.DoesNotExist:
@@ -238,10 +195,7 @@ def mark_unsatisfied(request, pk):
     Mark the feedback as unsatisfied.
     """
     try:
-        # Retrieve the PromptHistory object by the primary key (id)
         prompt_history = PromptHistory.objects.get(pk=pk, user=request.user)
-        
-        # Update the thumbs_feedback column to 'unsatisfied'
         prompt_history.thumbs_feedback = 'unsatisfied'
         prompt_history.save()
         
@@ -262,25 +216,18 @@ def get_files(request):
 @permission_classes([IsAuthenticated])
 def get_documents(request):
     try:
-        # Get the current collection name
         current_collection = CurrentUsingCollection.objects.first()  
         collection_name=current_collection.current_using_collection
         if not collection_name:
             return JsonResponse({'error': 'No current collection found'}, status=404)
-
-        # Construct the table name dynamically
         table_name = f"user_access_{collection_name}"
-
         with connection.cursor() as cursor:
-            # Execute the SQL query with the dynamically built table name
             query = f"SELECT document_name FROM {table_name}"
             cursor.execute(query)
             documents = cursor.fetchall()
-
         if documents:
-            # Extract file names from the document paths
-            file_names = [doc[0].split('/')[-1] for doc in documents]
-            return JsonResponse({'files': file_names}, status=200)
+            file_names = [doc[0] for doc in documents]
+            return JsonResponse({'files': file_names,}, status=200)
         else:
             return JsonResponse({'error': 'No documents found for this ps_number'}, status=404)
     except Exception as e:
@@ -289,58 +236,52 @@ def get_documents(request):
 @api_view(['POST'])
 @permission_classes([IsAuthenticated])
 def serve_pdf(request, filename, page_number):
-    file_path = os.path.join(PDF_DIRECTORY, filename)
-    
+    file_path = '/'+unquote(filename)
     try:
         if page_number < 1:
             raise ValueError("Page number must be greater than 0.")
     except ValueError:
         raise Http404("Invalid page number")
     
-    # Check if the file exists
     if os.path.exists(file_path):
-        # Open the PDF and extract the requested page
-        with open(file_path, 'rb') as file:
-            pdf_reader = PyPDF2.PdfReader(file)
-
-            # Adjust for 0-based index in PyPDF2
-            page_number -= 1 
-            
-            if page_number >= len(pdf_reader.pages):
-                raise Http404("Page not found in PDF")
-
-            # Create PDF writer to write the extracted page
-            pdf_writer = PyPDF2.PdfWriter()
-            pdf_writer.add_page(pdf_reader.pages[page_number])
-
-            # Create in-memory binary stream for the output PDF
-            output_pdf = BytesIO()
-            pdf_writer.write(output_pdf)
-            output_pdf.seek(0)
-
-            # Return the PDF as a response
-            return FileResponse(output_pdf, content_type='application/pdf')
+        try:
+            with open(file_path, 'rb') as file:
+                pdf_reader = PyPDF2.PdfReader(file)
+                page_number -= 1 
+                
+                if page_number >= len(pdf_reader.pages):
+                    raise Http404("Page not found in PDF")
+                
+                pdf_writer = PyPDF2.PdfWriter()
+                pdf_writer.add_page(pdf_reader.pages[page_number])
+                
+                output_pdf = BytesIO()
+                pdf_writer.write(output_pdf)
+                output_pdf.seek(0)
+                
+                return FileResponse(
+                    output_pdf, 
+                    content_type='application/pdf', 
+                    as_attachment=True,
+                    filename=os.path.basename(file_path)
+                )
+        except Exception as e:
+            print(f"Error reading PDF: {e}")
+            raise Http404("Error reading PDF")
     else:
         raise Http404("PDF not found")
 
 
-@api_view(['GET'])
-@permission_classes([IsAuthenticated])
-def get_folder(request):
-    folder = get_all_folders_from_milvus()  
-    return JsonResponse({"folder":folder}) 
+'''
+ Admin panel starts here
 
-
-# admin page
+'''
 @csrf_exempt 
 @api_view(['GET'])
 @permission_classes([IsAuthenticated])
 def get_collection_name(request):
     try:
-        
-        # List collections
         collections = client.list_collections()
-
         return JsonResponse({"collections": collections}, status=200)
     except Exception as e:
         return JsonResponse({"error": str(e)}, status=500)
@@ -352,31 +293,20 @@ def get_collection_name(request):
 def collection_files(request, collection_name):
     if request.method == 'GET':
         try:
-            # Connect to Milvus
             connections.connect("default", host='localhost', port='19530')
-            
-            # Initialize collection object
             collection = Collection(collection_name)
-            
-            # Query the collection
             iterator = collection.query_iterator(batch_size=1000, output_fields=["source"])
             results = []
-            
             while True:
                 result = iterator.next()
                 if not result:
                     iterator.close()
                     break
                 results.extend(result)
-            
-            # Extract unique files using a set and convert back to a list
             results = list(set([result['source'] for result in results]))
-            # Return the unique files as a JSON response
             return JsonResponse({"results": results}, status=200)
-        
         except Exception as e:
             return JsonResponse({"error": str(e)}, status=500)
-    
     return JsonResponse({"error": "Invalid request method"}, status=405)
 
 
@@ -385,24 +315,15 @@ def collection_files(request, collection_name):
 @permission_classes([IsAuthenticated]) 
 def delete_collection(request, collection_name):
     try:
-        
-        # Delete the collection
         client.drop_collection(collection_name)
-        # Step 2: Delete the corresponding table in MySQL
         connection = db_utility.create_connection()
-       
         cursor = connection.cursor()
-
-        # Construct the table name
         table_name = f"user_access_{collection_name}"
         drop_table_query = f"DROP TABLE IF EXISTS `{table_name}`;"  
-        
-        # Execute the query to drop the table
         cursor.execute(drop_table_query)
         connection.commit()
         cursor.close()
-        connection.close()
-        
+        connection.close()        
         return JsonResponse({"message": f"Collection '{collection_name}' deleted successfully."}, status=200)
     except Exception as e:
         return JsonResponse({"error": str(e)}, status=500)
@@ -417,34 +338,18 @@ def delete_file(request, source, collection_name):
            
             if not source or not collection_name:
                 return JsonResponse({"error": "Both 'source' and 'collection_name' are required"}, status=400)
-
-            # Connect to Milvus
             connections.connect("default", host='localhost', port='19530')
-
             collection = Collection(collection_name)
-              # URL Decode the source (since it's URL-encoded)
             decoded_source = urllib.parse.unquote(source)
-
-            # Construct delete expression based on the provided source (file name)
             delete_expr = f"source == '{decoded_source}'" 
-
             result = collection.delete(expr=delete_expr)
-
-            # Connect to MySQL to delete the corresponding row
             connection = db_utility.create_connection()
-
             cursor = connection.cursor()
-
-            # Construct the query to delete the row where document_name matches the source
             delete_row_query = f"DELETE FROM `user_access_{collection_name}` WHERE document_name = %s;"
-            
-            # Execute the query to delete the row
             cursor.execute(delete_row_query, (decoded_source,))
             connection.commit()
             cursor.close()
             connection.close()
-            
-            # Return success response
             if result.delete_count > 0:
                 return JsonResponse({"message": f"All files with source '{source}' deleted successfully"}, status=200)
             else:
@@ -467,7 +372,7 @@ def set_progress_message(message):
 # Helper function to find files in the source folder
 def find_files(root_dir, extensions):
     found_files = []
-    for dirpath, _, filenames in os.walk(root_dir):
+    for dirpath, _, _ in os.walk(root_dir):
         for ext in extensions:
             for filepath in glob.glob(os.path.join(dirpath, '*' + ext)):
                 found_files.append(filepath)
@@ -480,40 +385,28 @@ def create_collection(request):
     source = request.data.get('source')
     if not collection_name or not source:
         return JsonResponse({"error": "Collection name and source are required."}, status=400)
-    print(collection_name, source)
     try:
-        enable_logging.logger.info(f"Starting collection creation for {collection_name}.")
+        logger.info(f"Starting collection creation for {collection_name}.")
         start_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-
-        # Check if the collection exists
         if collection_name in client.list_collections():
-            enable_logging.logger.info(f"Collection {collection_name} already exists. Skipping creation.")
+            logger.info(f"Collection {collection_name} already exists. Skipping creation.")
             set_progress_message(f"Collection {collection_name} already exists. Skipping creation.")
         else:
-            enable_logging.logger.info(f"Creating new collection: {collection_name}")
+            logger.info(f"Creating new collection: {collection_name}")
         set_progress_message(f"Creating collection: {collection_name}")
 
-        # Fetch already processed documents
         already_chunked = db_utility.fetch_all_documents(collection_name)
-        enable_logging.logger.info(f"Already chunked documents: {already_chunked}")
-        print("Hello",already_chunked)
-        # Find files in the source directory
-        file_extensions = ['.PDF', '.pdf', '.txt', '.pptx', '.docx', '.xlsx', '.csv']
+        file_extensions = config('EXTENSIONS')
         found_files = find_files(source, file_extensions)
-        enable_logging.logger.info(f"Files found in source: {found_files}")
 
-        # Filter files to determine what needs to be chunked
         needs_to_be_chunked = [file for file in found_files if file not in already_chunked]
-        enable_logging.logger.info(f"Files needing chunking: {needs_to_be_chunked}")
-
+        needs_to_be_chunked = list(set(needs_to_be_chunked))
         if needs_to_be_chunked:
-            # Pass the file contents to create_langchain_documents and capture the progress
             progress_generator = file_process.create_langchain_documents(needs_to_be_chunked, collection_name)
 
             for progress in progress_generator:
-                progress_message = f"Progress: {progress['current_progress']} Files completed / Total files{progress['total_files']} - {progress['progress_percentage']:.2f}%"
+                progress_message = f"Progress: {progress['current_progress']} Files completed /  Total files  {progress['total_files']}   -   {progress['progress_percentage']:.2f}%"
                 set_progress_message(progress_message)
-                print("progress_message:",progress_message)
 
         else:
             set_progress_message("No new files to process.")
@@ -531,7 +424,7 @@ def create_collection(request):
         return JsonResponse({"message": "Collection creation completed."}, status=200)
 
     except Exception as e:
-        enable_logging.logger.error(f"Error during collection creation: {str(e)}")
+        logger.error(f"Error during collection creation: {str(e)}")
         set_progress_message(f"Error occurred: {str(e)}")
         return JsonResponse({"error": str(e)}, status=500)
 
@@ -640,7 +533,7 @@ def update_current_collection(request):
 def restart_server(request):
     if request.method == 'GET':
         try:
-            subprocess.Popen(['python3', 'manage.py', 'runserver', '8000'])
+            subprocess.Popen(['python3', 'manage.py', 'runserver', '0.0.0.0:8000'])
 
             # Get the current process ID and kill it
             pid = os.getpid()

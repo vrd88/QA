@@ -1,4 +1,3 @@
-import pandas as pd
 import mysql.connector
 from decouple import config
 '''
@@ -16,11 +15,11 @@ def create_connection():
 '''
 Error file related functions
 '''
-def create_error_files():
+def create_error_files(collection):
     connection = create_connection()
     cursor = connection.cursor()
-    create_table_query = """
-        CREATE TABLE IF NOT EXISTS error_files (
+    create_table_query = f"""
+        CREATE TABLE IF NOT EXISTS error_files_{collection} (
             id INT AUTO_INCREMENT PRIMARY KEY,
             file_path TEXT NOT NULL,
             error_message TEXT,
@@ -32,13 +31,14 @@ def create_error_files():
     return True
 
 
-def store_error_files_with_error(error_file_paths):
-    connection = create_connection
+def store_error_files_with_error(collection_name, file_path, error_message):
+    connection = create_connection()
     cursor = connection.cursor()
-    cursor.executemany(
-        "INSERT INTO error_files (file_path, error_message) VALUES (?, ?)",
-        [(file_path, error_message) for file_path, error_message in error_file_paths]
-    )
+    insert_query = f'''
+    INSERT INTO error_files_{collection_name} (file_path, error_message) 
+    VALUES (%s, %s);
+    '''
+    cursor.execute(insert_query, (file_path, error_message))
     connection.commit()
     cursor.close()
 
@@ -75,11 +75,11 @@ def fetch_all_documents(collection_name):
         check_table_query = f"""
             SELECT COUNT(*) 
             FROM information_schema.tables 
-            WHERE table_schema = 'SDC' AND table_name = 'user_access_{collection_name}';
+            WHERE table_name = 'user_access_{collection_name}';
         """
         cursor.execute(check_table_query)
         table_exists = cursor.fetchone()[0] > 0  # Returns True if the table exists
-
+        document_names = []
         if table_exists:
             # Query to select document_name from the table
             select_table_query = f'''
@@ -88,8 +88,6 @@ def fetch_all_documents(collection_name):
             cursor.execute(select_table_query)
             result = cursor.fetchall()
             document_names = [row[0] for row in result]
-        else:
-            document_names = []
 
         cursor.close()
         connection.close()
@@ -139,3 +137,11 @@ def insert_chunking_monitor(query):
     cursor.close()
     return True
 
+def update_ocr_status(document_source, collection_name):
+    connection = create_connection()
+    cursor = connection.cursor() 
+
+    update_query = f'''
+    UPDATE user_access_{collection_name} SET message = 'text extraction done' WHERE WHERE document_name = {document_source}'''
+    cursor.execute(update_query)
+    connection.commit()
