@@ -44,7 +44,7 @@ function PromptResponseCard({ item, index, editingIndex, setEditingIndex, handle
       setIsCommentSubmitted(false);
     }
     const token = sessionStorage.getItem('authToken');
-  
+
     try {
       const response = await fetch(`${apiUrl}api/mark_satisfied/${item.id}/`, {
         method: 'POST',
@@ -53,7 +53,7 @@ function PromptResponseCard({ item, index, editingIndex, setEditingIndex, handle
           Authorization: `Bearer ${token}`
         }
       });
-  
+
       if (response.ok) {
         const data = await response.json();
       } else {
@@ -77,31 +77,31 @@ function PromptResponseCard({ item, index, editingIndex, setEditingIndex, handle
   //   setIsCommentSubmitted(false); // Reset comment state whenever thumbs down is clicked
   // };
 
-const handleThumbsDownClick = async () => {
-  setIsThumbsDownActive(true);
-  setIsThumbsUpActive(false);
-  setIsCommentSubmitted(false); 
-  const token = sessionStorage.getItem('authToken');
+  const handleThumbsDownClick = async () => {
+    setIsThumbsDownActive(true);
+    setIsThumbsUpActive(false);
+    setIsCommentSubmitted(false);
+    const token = sessionStorage.getItem('authToken');
 
-  try {
-    const response = await fetch(`${apiUrl}/api/mark_unsatisfied/${item.id}/`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        Authorization: `Bearer ${token}`
+    try {
+      const response = await fetch(`${apiUrl}/api/mark_unsatisfied/${item.id}/`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${token}`
+        }
+      });
+
+      if (response.ok) {
+        const data = await response.json();
+        console.log(data.message);
+      } else {
+        console.error('Failed to mark as unsatisfied:', response.statusText);
       }
-    });
-
-    if (response.ok) {
-      const data = await response.json();
-      console.log(data.message); 
-    } else {
-      console.error('Failed to mark as unsatisfied:', response.statusText);
+    } catch (error) {
+      console.error('Error marking as unsatisfied:', error);
     }
-  } catch (error) {
-    console.error('Error marking as unsatisfied:', error);
-  }
-};
+  };
 
 
   const handleCommentSubmit = async () => {
@@ -129,135 +129,96 @@ const handleThumbsDownClick = async () => {
     }
   };
 
-  // const handlePdfClick = async () => {
-  //   const fileName = "C273.pdf";
-  //   const pageNumber = 7;
-  //   try {
-  //     const response = await fetch(`https://dq2jqf0v-8000.inc1.devtunnels.ms/api/serve-pdf/${fileName}/${pageNumber}/`, {
-  //       method: 'GET',
-  //       headers: {
-  //         'Content-Type': 'application/json',
-  //       },
-  //     });
-
-  //     console.log('Response Status:', response.status);
-  //     console.log('Response:', await response.text()); // Log response text for debugging
-
-  //     if (response.ok) {
-  //       // Assuming the backend will return the PDF file as a response
-  //       const blob = await response.blob();
-  //       const url = URL.createObjectURL(blob);
-  //       console.log('PDF URL:', url);
-
-  //       // Open the PDF in a new tab
-  //       window.open(url, '_blank');
-  //     } else {
-  //       console.error("Error fetching PDF:", response.statusText);
-  //     }
-  //   } catch (error) {
-  //     console.error("Error fetching PDF:", error);
-  //   }
-  // };
-
   const handlePdfClick = async (fileName, pageNumber) => {
-    // const fileName = "ASME SEC V A-7 MPE.pdf";  
-    // const pageNumber = 7;        
-
-    // Encode fileName to handle special characters (spaces, etc.)
     const encodedFileName = encodeURIComponent(fileName);
+    const token = sessionStorage.getItem('authToken');
 
     try {
       // API call to get the PDF from the backend
-      const response = await fetch(`${apiUrl}/api/serve-pdf/${encodedFileName}/${pageNumber}/`, {
-        method: 'GET',
+      const response = await fetch(`${apiUrl}/api/serve-pdf${encodedFileName}/${pageNumber}/`, {
+        method: 'POST',
         headers: {
           'Content-Type': 'application/json',
+          Authorization: `Bearer ${token}`
         },
       });
 
-
-      // Check if the response is OK
       if (response.ok) {
-        // Convert the response body to a Blob (PDF content)
         const blob = await response.blob();
-
-        // Create a URL for the Blob object
         const pdfUrl = URL.createObjectURL(blob);
-
-        // Open the PDF in a new tab
         window.open(pdfUrl, '_blank');
       } else {
-        // Handle the error if the response is not OK
         console.error("Error fetching PDF:", response.statusText);
       }
     } catch (error) {
-      // Catch any errors during the fetch operation
       console.error("Error fetching PDF:", error);
     }
   };
 
 
-  const processResponseLinks = (responseText) => {
-    return responseText.split('\n\n').map((part, index) => {
-      // Replace the entire source path with a clickable link
-      const updatedPart = part.split(/(Source: .*?[\w\s\-_]+\.pdf \| Page: \d+)/g).map((chunk, idx) => {
-        if (chunk.match(/Source: .*?([\w\s\-_]+\.pdf) \| Page: (\d+)/)) {
-          const [_, fileName, pageNumber] = chunk.match(/Source: .*?([\w\s\-_]+\.pdf) \| Page: (\d+)/);
-          return (
-            <a key={fileName + pageNumber} href="#" onClick={() => handlePdfClick(fileName, pageNumber)}>
-              {chunk}
-            </a>
-          );
-        }
-        return chunk; // Return other parts as is
-      });
-  
-      // Return the updated part wrapped in a span, joining array elements back to a string
-      return (
-        <span key={index}>
-          {updatedPart}
-          {index !== responseText.split('\n\n').length - 1 && <br />}
-        </span>
-      );
+const processResponseLinks = (responseText) => {
+  return responseText.split('\n\n').map((part, index) => {
+    const updatedPart = part.split(/(Source: .*?[\w\s\-_]+\.pdf \| Page: \d+)/g).map((chunk, idx) => {
+      const sourceMatch = chunk.match(/Source: (.*?\.pdf) \| Page: (\d+)/);
+      if (sourceMatch) {
+        const [_, filePath, pageNumber] = sourceMatch;
+        
+        // Encode the full filepath
+        const encodedFilePath = encodeURIComponent(filePath);
+        
+        return (
+          <a 
+            key={filePath + pageNumber} 
+            href={`/api/serve-pdf/${encodedFilePath}/${pageNumber}/`} 
+            onClick={(e) => {
+              e.preventDefault();
+              handlePdfClick(filePath, pageNumber);
+            }}
+          >
+            {chunk}
+          </a>
+        );
+      }
+      return chunk;
     });
-  };
-  
+    return (
+      <span key={index}>
+        {updatedPart}
+        {index !== responseText.split('\n\n').length - 1 && <br />}
+      </span>
+    );
+  });
+};
 
-    // const processResponseLinks = (responseText) => {
-    //   return responseText.split('\n\n').map((part, index) => {
-    //     // Replace the 'Source: ... | Page: ...' pattern with a clickable link
-    //     const updatedPart = part.split(/(Source: [\w-]+\.pdf \| Page: \d+)/g).map((chunk, idx) => {
-    //       if (chunk.match(/Source: ([\w-]+\.pdf) \| Page: (\d+)/)) {
-    //         const [_, fileName, pageNumber] = chunk.match(/Source: ([\w-]+\.pdf) \| Page: (\d+)/);
-    //         return (
-    //           <a key={fileName + pageNumber} href="#" onClick={() => handlePdfClick(fileName, pageNumber)}>
-    //             {chunk}
-    //           </a>
-    //         );
-    //       }
-    //       return chunk; // Return other parts as is
-    //     });
+
+//   const processResponseLinks = (responseText) => {
+//     const sourceParts = responseText.split('Source:').slice(1);
     
-    //     // Return the updated part wrapped in a span, joining array elements back to a string
-    //     return (
-    //       <span key={index}>
-    //         {updatedPart}
-    //         {index !== responseText.split('\n\n').length - 1 && <br />}
-    //       </span>
-    //     );
-    //   });
-    // };
+//     return sourceParts.map((part, index) => {
+//         const fileMatch = part.match(/(.*?\.pdf)\s*\|\s*Page:\s*(\d+)/);
+        
+//         if (fileMatch) {
+//             const filePath = fileMatch[1].trim();
+//             const pageNumber = fileMatch[2].trim();
+//             const fullSourceText = `Source:${part}`;
+            
+//             return (
+//                 <span key={index}>
+//                     <a href="#" onClick={() => handlePdfClick(filePath, pageNumber)}>
+//                         {fullSourceText}
+//                     </a>
+//                     {index !== sourceParts.length - 1 && <br />}
+//                 </span>
+//             );
+//         }
+        
+//         return null;
+//     }).filter(link => link !== null);
+// };
 
- 
+
   return (
     <div className="card-container">
-      {/* <div className=''>
-        <img
-          src="/images/profile.png"
-          alt="Prompt Avatar"
-          className="avatar1"
-        />
-      </div> */}
       <div className="prompt-card">
         {editingIndex === index ? (
           <div className="edit-prompt-card">
@@ -286,50 +247,34 @@ const handleThumbsDownClick = async () => {
       />
 
       <div className="response-card">
-        {/* <p>{item.response || 'Loading...'}</p> */}
-        {/* <p>
+        <p>
           {item.response ? (
-            item.response.split('\n\n').map((part, index) => (
-              <span key={index}>
-                {part}
-                {index !== item.response.split('\n\n').length - 1 && <br />}
-              </span>
-            ))
+            processResponseLinks(item.response)
           ) : (
             'Loading...'
           )}
-        </p> */}
-
-
-<p>
-      {item.response ? (
-        processResponseLinks(item.response)
-      ) : (
-        'Loading...'
-      )}
-    </p>
+        </p>
 
         {/* <button onClick={() => onSendPrompt("Continue")} >Continue</button>
 
         <button className='pdf-button' onClick={handlePdfClick}>
           Click to open PDF
         </button> */}
-        <div className="pdf-button-container">
+        {/* <div className="pdf-button-container">
         
           <div className="continue-container">
-            <FontAwesomeIcon icon={faArrowDown} className="arrow-icon" /> {/* Use the imported icon as a component */}
+            <FontAwesomeIcon icon={faArrowDown} className="arrow-icon" />
             <a
               href="#"
               className="continue-link"
-              onClick={(e) => {
-                e.preventDefault(); // Prevent default anchor behavior (page reload)
-                onSendPrompt("Continue"); // Trigger your onSendPrompt function
-              }}
+              // onClick={(e) => {
+              //   e.preventDefault(); // Prevent default anchor behavior (page reload)
+              //   onSendPrompt("Continue"); // Trigger your onSendPrompt function
+              // }}
             >
-              Continue
             </a>
           </div>
-        </div>
+        </div> */}
 
 
         <div className='thumps'>

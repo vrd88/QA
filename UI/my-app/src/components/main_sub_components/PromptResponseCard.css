@@ -180,6 +180,11 @@ display: flex;
 }
 
 
+a {
+  color: black;
+  text-decoration: none;
+  cursor: pointer;
+}
 
 
 
