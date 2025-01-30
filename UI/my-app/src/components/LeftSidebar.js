@@ -298,11 +298,11 @@ function LeftSidebar({ history, onHistoryClick, onFileSelect, onLogout, setSelec
         />
       </div>
 
-      <label className="custom-file-input">
+      {/* <label className="custom-file-input">
         <FontAwesomeIcon icon={faCloudArrowUp} className="upload" />
         Upload document
         <input type="file" />
-      </label>
+      </label> */}
 
       <div className="history-section">
         <h4>Today</h4>
@@ -351,7 +351,7 @@ function LeftSidebar({ history, onHistoryClick, onFileSelect, onLogout, setSelec
       <div className="user-card-container">
         <div className="user-details">
           <img
-            src="https://via.placeholder.com/40"
+            src="/images/ai-technology.png"
             alt="User Avatar"
             className="user_avatar"
           />
