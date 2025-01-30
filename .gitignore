@@ -4,3 +4,4 @@ QC_Documents
 QA/RAG_backend/cohere_app/__pycache__
 llama3.2
 data
+my_saved_model

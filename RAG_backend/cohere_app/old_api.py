@@ -14,13 +14,8 @@ import time
 def generate_response(prompt: str):
 
     api_keys = [
-    "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",
-    "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",
-    "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",
-    "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",
-    "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",
-    "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",
-    "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",
+    "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",
+    "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",
     ]
 
     # Initialize ChatGroq parameters
