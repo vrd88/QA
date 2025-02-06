@@ -132,48 +132,74 @@ def clean_text(text):
 
 
 def read_and_split_text(text_by_page, min_chunk_size=800, max_chunk_size=1200):
-    """ Advanced text chunking with intelligent merging and splitting """
+    """Advanced text chunking with intelligent merging and splitting"""
     chunks = []
-
-    def smart_chunk_processing(text, page_number):
+    
+    def smart_chunk_processing(text, page_number, should_overlap=False):
+        """
+        Process text into chunks with optional overlapping
+        Args:
+            text: Text to process
+            page_number: Current page number
+            should_overlap: Boolean indicating if overlapping should be applied
+        """
         sentences = max([re.split(r'(?<=[.!?])\s+', text), re.split(r'\n', text)], key=len)
         current_chunk = ""
         processed_chunks = []
-
+        last_chunk_sentences = []
+        overlap_size = 2 
+        
         for sentence in sentences:
             if len(sentence) > max_chunk_size:
                 while sentence:
                     chunk = sentence[:max_chunk_size]
                     processed_chunks.append(chunk)
                     sentence = sentence[max_chunk_size:]
-                current_chunk = ""
+                    current_chunk = ""
+                    last_chunk_sentences = []
                 continue
-
+            
             potential_chunk = (current_chunk + " " + sentence).strip()
             
             if len(potential_chunk) > max_chunk_size:
                 if len(current_chunk) >= min_chunk_size:
                     processed_chunks.append(current_chunk)
-                    current_chunk = sentence
+                    if should_overlap:
+                        if last_chunk_sentences:
+                            overlap_sentences = last_chunk_sentences[-overlap_size:]
+                            current_chunk = " ".join(overlap_sentences) + " " + sentence
+                            last_chunk_sentences = overlap_sentences + [sentence]
+                    else:
+                        current_chunk = sentence
+                        last_chunk_sentences = [sentence]
                 else:
-                    current_chunk = potential_chunk[:max_chunk_size]
-            
-            elif len(potential_chunk) >= min_chunk_size:
-                current_chunk = potential_chunk
-            
+                    current_chunk = sentence
+                    last_chunk_sentences = [sentence]
             else:
                 current_chunk = potential_chunk
-
+                last_chunk_sentences.append(sentence)
+        
         if current_chunk and len(current_chunk) >= min_chunk_size:
             processed_chunks.append(current_chunk)
         
         return [(chunk, page_number) for chunk in processed_chunks]
-
-
+    
     for page_num, page_text in text_by_page:
-        page_chunks = smart_chunk_processing(page_text, page_num)
+        cleaned_text = clean_text(page_text)
+        page_chunks = smart_chunk_processing(cleaned_text, page_num, should_overlap=False)
         chunks.extend(page_chunks)
-
+    
+    if len(chunks) < 5:
+        chunks = []  
+        logger.info("Document has fewer than 5 chunks. Reprocessing with overlap...")
+        
+        for page_num, page_text in text_by_page:
+            cleaned_text = clean_text(page_text)
+            page_chunks = smart_chunk_processing(cleaned_text, page_num, should_overlap=True)
+            chunks.extend(page_chunks)
+        
+        logger.info(f"After overlap processing: {len(chunks)} chunks created")
+    
     return chunks
 
 
