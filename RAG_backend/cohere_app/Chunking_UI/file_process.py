@@ -130,33 +130,34 @@ def clean_text(text):
     cleaned_text = re.sub(r'^\s*$', '', cleaned_text, flags=re.MULTILINE)
     return cleaned_text.strip()
 
-
 def read_and_split_text(text_by_page, min_chunk_size=800, max_chunk_size=1200):
     """Advanced text chunking with intelligent merging and splitting"""
     chunks = []
     
-    def smart_chunk_processing(text, page_number, should_overlap=False):
+    def smart_chunk_processing(text, page_number, force_overlap=False):
         """
         Process text into chunks with optional overlapping
         Args:
             text: Text to process
             page_number: Current page number
-            should_overlap: Boolean indicating if overlapping should be applied
+            force_overlap: Boolean indicating if overlapping should be forced
         """
         sentences = max([re.split(r'(?<=[.!?])\s+', text), re.split(r'\n', text)], key=len)
         current_chunk = ""
         processed_chunks = []
         last_chunk_sentences = []
-        overlap_size = 2 
+        overlap_size = 2
         
         for sentence in sentences:
             if len(sentence) > max_chunk_size:
+                if current_chunk:
+                    processed_chunks.append(current_chunk)
                 while sentence:
                     chunk = sentence[:max_chunk_size]
                     processed_chunks.append(chunk)
                     sentence = sentence[max_chunk_size:]
-                    current_chunk = ""
-                    last_chunk_sentences = []
+                current_chunk = ""
+                last_chunk_sentences = []
                 continue
             
             potential_chunk = (current_chunk + " " + sentence).strip()
@@ -164,7 +165,7 @@ def read_and_split_text(text_by_page, min_chunk_size=800, max_chunk_size=1200):
             if len(potential_chunk) > max_chunk_size:
                 if len(current_chunk) >= min_chunk_size:
                     processed_chunks.append(current_chunk)
-                    if should_overlap:
+                    if force_overlap:
                         if last_chunk_sentences:
                             overlap_sentences = last_chunk_sentences[-overlap_size:]
                             current_chunk = " ".join(overlap_sentences) + " " + sentence
@@ -173,35 +174,35 @@ def read_and_split_text(text_by_page, min_chunk_size=800, max_chunk_size=1200):
                         current_chunk = sentence
                         last_chunk_sentences = [sentence]
                 else:
-                    current_chunk = sentence
-                    last_chunk_sentences = [sentence]
+                    current_chunk = potential_chunk
+                    last_chunk_sentences.append(sentence)
             else:
                 current_chunk = potential_chunk
                 last_chunk_sentences.append(sentence)
         
-        if current_chunk and len(current_chunk) >= min_chunk_size:
-            processed_chunks.append(current_chunk)
+        if current_chunk:
+            if len(current_chunk) >= min_chunk_size:
+                processed_chunks.append(current_chunk)
+            elif processed_chunks: 
+                processed_chunks[-1] = processed_chunks[-1] + " " + current_chunk
         
         return [(chunk, page_number) for chunk in processed_chunks]
     
+    
     for page_num, page_text in text_by_page:
         cleaned_text = clean_text(page_text)
-        page_chunks = smart_chunk_processing(cleaned_text, page_num, should_overlap=False)
+        page_chunks = smart_chunk_processing(cleaned_text, page_num, force_overlap=False)
         chunks.extend(page_chunks)
     
     if len(chunks) < 5:
-        chunks = []  
+        chunks = []
         logger.info("Document has fewer than 5 chunks. Reprocessing with overlap...")
-        
         for page_num, page_text in text_by_page:
             cleaned_text = clean_text(page_text)
-            page_chunks = smart_chunk_processing(cleaned_text, page_num, should_overlap=True)
+            page_chunks = smart_chunk_processing(cleaned_text, page_num, force_overlap=True)
             chunks.extend(page_chunks)
-        
-        logger.info(f"After overlap processing: {len(chunks)} chunks created")
     
     return chunks
-
 
 def process_document(file_path):
     """ Process a single document """
@@ -236,26 +237,23 @@ def create_langchain_documents(found_files, collection_name):
     db_utility.chunking_monitor()
     db_utility.create_error_files(collection_name)
 
-    # Process found files
     for file_index, file in enumerate(found_files):
         text_by_page, message = process_document(file)
         if text_by_page and 'error' not in message.lower():
             chunks = read_and_split_text(text_by_page)
-            logger.info(f"current processing file {file} with {len(str(chunks))}")
-            if len(str(chunks)) > 5:
+            logger.info(f"current processing file {file} with {len(chunks)}")
+            if chunks:  
+                documents = []
                 for chunk, page_num in chunks:
-                    documents = []
                     doc = Document(page_content=chunk, metadata={'source': file, 'page': str(page_num)})
                     documents.append(doc)
 
-                    if documents:
-                        Milvus.from_documents(documents, embeddings, collection_name=collection_name,
-                                            connection_args={'uri': "http://localhost:19530"})
-            
-                    
+                if documents:
+                    Milvus.from_documents(documents, embeddings, collection_name=collection_name,
+                                        connection_args={'uri': "http://localhost:19530"})
                 db_utility.insert_user_access(file, 'YES', message, collection_name)
             else:
-                db_utility.store_error_files_with_error(collection_name, file, "Too small chunk size -- document skipped")
+                db_utility.store_error_files_with_error(collection_name, file, "No valid chunks created")
         elif "error" in message.lower() and "ocr" not in message.lower():
             db_utility.store_error_files_with_error(collection_name, file, message)
             logger.error(f"Error in the document - Skipping {file}")
@@ -269,15 +267,16 @@ def create_langchain_documents(found_files, collection_name):
         text_by_page, message = process_ocr_document(ocr_file)
         if text_by_page:
             chunks = read_and_split_text(text_by_page)
-            logger.info(f"current processing file {file} with {len(str(chunks))}")
-            if len(str(chunks)) > 5:
+            logger.info(f"current processing file {ocr_file} with {len(chunks)}")
+            if chunks:  
+                documents = []
                 for chunk, page_num in chunks:
-                    documents = []
                     doc = Document(page_content=chunk, metadata={'source': ocr_file, 'page': str(page_num)})
                     documents.append(doc)
-                    if documents:
-                        Milvus.from_documents(documents, embeddings, collection_name=collection_name,
-                                            connection_args={'uri': "http://localhost:19530"})
+                    
+                if documents:
+                    Milvus.from_documents(documents, embeddings, collection_name=collection_name,
+                                        connection_args={'uri': "http://localhost:19530"})
                 db_utility.update_ocr_status(ocr_file, collection_name)
         progress_percentage = (ocr_file_index + 1) / len(OCR_LIST) * 100
         yield {"progress_percentage": progress_percentage, "current_progress": ocr_file_index + 1, "total_files": len(OCR_LIST)}
