@@ -1,3 +1,4 @@
+
 import re
 from tqdm import tqdm
 import fitz
@@ -130,79 +131,85 @@ def clean_text(text):
     cleaned_text = re.sub(r'^\s*$', '', cleaned_text, flags=re.MULTILINE)
     return cleaned_text.strip()
 
-def read_and_split_text(text_by_page, min_chunk_size=800, max_chunk_size=1200):
-    """Advanced text chunking with intelligent merging and splitting"""
+def read_and_split_text(text_by_page, min_chunk_size=800, max_chunk_size=1200, overlap_size=200):
+    """ Advanced text chunking with intelligent merging, splitting and overlapping for small documents """
     chunks = []
-    
-    def smart_chunk_processing(text, page_number, force_overlap=False):
-        """
-        Process text into chunks with optional overlapping
-        Args:
-            text: Text to process
-            page_number: Current page number
-            force_overlap: Boolean indicating if overlapping should be forced
-        """
+
+    def smart_chunk_processing(text, page_number):
         sentences = max([re.split(r'(?<=[.!?])\s+', text), re.split(r'\n', text)], key=len)
         current_chunk = ""
         processed_chunks = []
-        last_chunk_sentences = []
-        overlap_size = 2
-        
+
         for sentence in sentences:
             if len(sentence) > max_chunk_size:
-                if current_chunk:
-                    processed_chunks.append(current_chunk)
                 while sentence:
                     chunk = sentence[:max_chunk_size]
                     processed_chunks.append(chunk)
                     sentence = sentence[max_chunk_size:]
                 current_chunk = ""
-                last_chunk_sentences = []
                 continue
-            
+
             potential_chunk = (current_chunk + " " + sentence).strip()
             
             if len(potential_chunk) > max_chunk_size:
                 if len(current_chunk) >= min_chunk_size:
                     processed_chunks.append(current_chunk)
-                    if force_overlap:
-                        if last_chunk_sentences:
-                            overlap_sentences = last_chunk_sentences[-overlap_size:]
-                            current_chunk = " ".join(overlap_sentences) + " " + sentence
-                            last_chunk_sentences = overlap_sentences + [sentence]
-                    else:
-                        current_chunk = sentence
-                        last_chunk_sentences = [sentence]
+                    current_chunk = sentence
                 else:
-                    current_chunk = potential_chunk
-                    last_chunk_sentences.append(sentence)
+                    current_chunk = potential_chunk[:max_chunk_size]
+            
+            elif len(potential_chunk) >= min_chunk_size:
+                processed_chunks.append(potential_chunk)
+                current_chunk = ""
+            
             else:
                 current_chunk = potential_chunk
-                last_chunk_sentences.append(sentence)
-        
-        if current_chunk:
-            if len(current_chunk) >= min_chunk_size:
-                processed_chunks.append(current_chunk)
-            elif processed_chunks: 
-                processed_chunks[-1] = processed_chunks[-1] + " " + current_chunk
+
+        if current_chunk and len(current_chunk) >= min_chunk_size:
+            processed_chunks.append(current_chunk)
+
+        if len(processed_chunks) < 5 and processed_chunks:
+            adjusted_min_size = min(min_chunk_size, 400)  
+            adjusted_max_size = min(max_chunk_size, 800) 
+            
+            full_text = " ".join(processed_chunks)
+            
+            overlapping_chunks = []
+            start = 0
+            
+            while start < len(full_text):
+                end = start + adjusted_max_size
+                chunk = full_text[start:end]
+                
+                if end < len(full_text):
+                    last_period = chunk.rfind('.')
+                    if last_period != -1:
+                        chunk = chunk[:last_period + 1]
+                        end = start + len(chunk)
+                
+                if len(chunk) >= adjusted_min_size:
+                    overlapping_chunks.append(chunk)
+                
+                start = end - overlap_size
+                
+                if len(full_text) - start < adjusted_min_size:
+                    if len(full_text) - start > 0:
+                        final_chunk = full_text[start:]
+                        if len(final_chunk) >= adjusted_min_size:
+                            overlapping_chunks.append(final_chunk)
+                    break
+            
+            if len(overlapping_chunks) >= 5:
+                processed_chunks = overlapping_chunks
         
         return [(chunk, page_number) for chunk in processed_chunks]
-    
-    
+
     for page_num, page_text in text_by_page:
-        cleaned_text = clean_text(page_text)
-        page_chunks = smart_chunk_processing(cleaned_text, page_num, force_overlap=False)
+        page_chunks = smart_chunk_processing(page_text, page_num)
         chunks.extend(page_chunks)
-    
-    if len(chunks) < 5:
-        chunks = []
-        logger.info("Document has fewer than 5 chunks. Reprocessing with overlap...")
-        for page_num, page_text in text_by_page:
-            cleaned_text = clean_text(page_text)
-            page_chunks = smart_chunk_processing(cleaned_text, page_num, force_overlap=True)
-            chunks.extend(page_chunks)
-    
+
     return chunks
+
 
 def process_document(file_path):
     """ Process a single document """
@@ -225,23 +232,25 @@ def process_document(file_path):
     #TODO - i dont think so this except requires to store the error files
     except Exception as e:
         return [], f"Error processing document {file_path}\n{e}"
-
 def create_langchain_documents(found_files, collection_name):
     """
     Create langchain documents from the extracted and processed text.
-
+    
     This function processes PDF, PPTX, DOCX, TXT, XLSX, and CSV files in parallel.
     If a PDF requires OCR processing (no text found), it's handled sequentially.
+    Now includes better handling of small documents through chunk overlapping.
     """
     db_utility.create_user_access(collection_name)
     db_utility.chunking_monitor()
     db_utility.create_error_files(collection_name)
 
+    # Process found files
     for file_index, file in enumerate(found_files):
         text_by_page, message = process_document(file)
         if text_by_page and 'error' not in message.lower():
             chunks = read_and_split_text(text_by_page)
-            logger.info(f"current processing file {file} with {len(chunks)}")
+            logger.info(f"current processing file {file} with {len(chunks)} chunks")
+            
             if chunks:  
                 documents = []
                 for chunk, page_num in chunks:
@@ -249,25 +258,32 @@ def create_langchain_documents(found_files, collection_name):
                     documents.append(doc)
 
                 if documents:
-                    Milvus.from_documents(documents, embeddings, collection_name=collection_name,
-                                        connection_args={'uri': "http://localhost:19530"})
-                db_utility.insert_user_access(file, 'YES', message, collection_name)
+                    try:
+                        Milvus.from_documents(documents, embeddings, collection_name=collection_name,
+                                            connection_args={'uri': "http://localhost:19530"})
+                        db_utility.insert_user_access(file, 'YES', message, collection_name)
+                    except Exception as e:
+                        error_message = f"Error inserting into Milvus: {str(e)}"
+                        logger.error(error_message)
+                        db_utility.store_error_files_with_error(collection_name, file, error_message)
             else:
-                db_utility.store_error_files_with_error(collection_name, file, "No valid chunks created")
+                db_utility.store_error_files_with_error(collection_name, file, "No valid chunks generated")
+                
         elif "error" in message.lower() and "ocr" not in message.lower():
             db_utility.store_error_files_with_error(collection_name, file, message)
             logger.error(f"Error in the document - Skipping {file}")
+            
         progress_percentage = (file_index + 1) / len(found_files) * 100
         yield {"progress_percentage": progress_percentage, "current_progress": file_index + 1, "total_files": len(found_files)}
 
     # Process OCR files
-    documents = []
     for ocr_file_index, ocr_file in enumerate(tqdm(OCR_LIST, desc="Overall Progress")):
-        tqdm().set_description(f"Processing File :  {ocr_file}")
+        tqdm().set_description(f"Processing File: {ocr_file}")
         text_by_page, message = process_ocr_document(ocr_file)
         if text_by_page:
             chunks = read_and_split_text(text_by_page)
-            logger.info(f"current processing file {ocr_file} with {len(chunks)}")
+            logger.info(f"current processing file {ocr_file} with {len(chunks)} chunks")
+            
             if chunks:  
                 documents = []
                 for chunk, page_num in chunks:
@@ -275,8 +291,14 @@ def create_langchain_documents(found_files, collection_name):
                     documents.append(doc)
                     
                 if documents:
-                    Milvus.from_documents(documents, embeddings, collection_name=collection_name,
-                                        connection_args={'uri': "http://localhost:19530"})
-                db_utility.update_ocr_status(ocr_file, collection_name)
+                    try:
+                        Milvus.from_documents(documents, embeddings, collection_name=collection_name,
+                                            connection_args={'uri': "http://localhost:19530"})
+                        db_utility.update_ocr_status(ocr_file, collection_name)
+                    except Exception as e:
+                        error_message = f"Error inserting OCR document into Milvus: {str(e)}"
+                        logger.error(error_message)
+                        db_utility.store_error_files_with_error(collection_name, ocr_file, error_message)
+                        
         progress_percentage = (ocr_file_index + 1) / len(OCR_LIST) * 100
         yield {"progress_percentage": progress_percentage, "current_progress": ocr_file_index + 1, "total_files": len(OCR_LIST)}
