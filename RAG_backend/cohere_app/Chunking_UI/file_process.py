@@ -168,7 +168,7 @@ def read_and_split_text(text_by_page, min_chunk_size=800, max_chunk_size=1200, o
         if current_chunk and len(current_chunk) >= min_chunk_size:
             processed_chunks.append(current_chunk)
 
-        if len(processed_chunks) < 5 and processed_chunks:
+        if 0 < len(processed_chunks) < 5:
             adjusted_min_size = min(min_chunk_size, 400)  
             adjusted_max_size = min(max_chunk_size, 800) 
             
@@ -198,18 +198,21 @@ def read_and_split_text(text_by_page, min_chunk_size=800, max_chunk_size=1200, o
                         if len(final_chunk) >= adjusted_min_size:
                             overlapping_chunks.append(final_chunk)
                     break
-            
+           
             if len(overlapping_chunks) >= 5:
                 processed_chunks = overlapping_chunks
+        
+            elif len(processed_chunks) < 3:
+                return []
         
         return [(chunk, page_number) for chunk in processed_chunks]
 
     for page_num, page_text in text_by_page:
         page_chunks = smart_chunk_processing(page_text, page_num)
-        chunks.extend(page_chunks)
+        if page_chunks:  
+            chunks.extend(page_chunks)
 
     return chunks
-
 
 def process_document(file_path):
     """ Process a single document """
@@ -232,6 +235,7 @@ def process_document(file_path):
     #TODO - i dont think so this except requires to store the error files
     except Exception as e:
         return [], f"Error processing document {file_path}\n{e}"
+
 def create_langchain_documents(found_files, collection_name):
     """
     Create langchain documents from the extracted and processed text.
