@@ -1,4 +1,3 @@
-
 import re
 from tqdm import tqdm
 import fitz
@@ -131,88 +130,76 @@ def clean_text(text):
     cleaned_text = re.sub(r'^\s*$', '', cleaned_text, flags=re.MULTILINE)
     return cleaned_text.strip()
 
-def read_and_split_text(text_by_page, min_chunk_size=800, max_chunk_size=1200, overlap_size=200):
-    """ Advanced text chunking with intelligent merging, splitting and overlapping for small documents """
+def clean_chunk(chunk):
+    """
+    Clean a text chunk by removing extra formatting characters.
+    Processes text line-by-line, removing lines that consist mostly of formatting symbols,
+    then collapses extra whitespace.
+    """
+    lines = chunk.splitlines()
+    cleaned_lines = []
+    for line in lines:
+        stripped_line = line.strip()
+        if not stripped_line:
+            continue
+        alnum_count = sum(1 for ch in stripped_line if ch.isalnum())
+        if len(stripped_line) > 0 and (alnum_count / len(stripped_line)) < 0.3:
+            continue
+        cleaned_lines.append(line)
+    cleaned_chunk = " ".join(cleaned_lines)
+    cleaned_chunk = re.sub(r'[\-\+\|=]{2,}', ' ', cleaned_chunk)
+    cleaned_chunk = re.sub(r'\s+', ' ', cleaned_chunk)
+    return cleaned_chunk.strip()
+
+
+def read_and_split_text(text_by_page, chunk_size=800, overlap_size=200):
+    """
+    Create chunks using a sliding window approach while tracking page numbers.
+    Each chunk is built by concatenating cleaned paragraphs until it reaches at least
+    chunk_size characters, then extended until the end of the sentence if needed.
+    Returns a list of tuples: (chunk_text, page_number).
+    """
+    logger.info(f"Creating chunks from {len(text_by_page)} pages...")
+    
     chunks = []
-
-    def smart_chunk_processing(text, page_number):
-        sentences = max([re.split(r'(?<=[.!?])\s+', text), re.split(r'\n', text)], key=len)
-        current_chunk = ""
-        processed_chunks = []
-
-        for sentence in sentences:
-            if len(sentence) > max_chunk_size:
-                while sentence:
-                    chunk = sentence[:max_chunk_size]
-                    processed_chunks.append(chunk)
-                    sentence = sentence[max_chunk_size:]
-                current_chunk = ""
-                continue
-
-            potential_chunk = (current_chunk + " " + sentence).strip()
+    current_text = ""
+    current_pages = set()
+    
+    for page_num, text in text_by_page:
+        cleaned_para = clean_chunk(text)
+        if not cleaned_para:
+            continue
             
-            if len(potential_chunk) > max_chunk_size:
-                if len(current_chunk) >= min_chunk_size:
-                    processed_chunks.append(current_chunk)
-                    current_chunk = sentence
-                else:
-                    current_chunk = potential_chunk[:max_chunk_size]
-            
-            elif len(potential_chunk) >= min_chunk_size:
-                processed_chunks.append(potential_chunk)
-                current_chunk = ""
-            
-            else:
-                current_chunk = potential_chunk
-
-        if current_chunk and len(current_chunk) >= min_chunk_size:
-            processed_chunks.append(current_chunk)
-
-        if 0 < len(processed_chunks) < 5:
-            adjusted_min_size = min(min_chunk_size, 400)  
-            adjusted_max_size = min(max_chunk_size, 800) 
-            
-            full_text = " ".join(processed_chunks)
-            
-            overlapping_chunks = []
-            start = 0
-            
-            while start < len(full_text):
-                end = start + adjusted_max_size
-                chunk = full_text[start:end]
-                
-                if end < len(full_text):
-                    last_period = chunk.rfind('.')
-                    if last_period != -1:
-                        chunk = chunk[:last_period + 1]
-                        end = start + len(chunk)
-                
-                if len(chunk) >= adjusted_min_size:
-                    overlapping_chunks.append(chunk)
-                
-                start = end - overlap_size
-                
-                if len(full_text) - start < adjusted_min_size:
-                    if len(full_text) - start > 0:
-                        final_chunk = full_text[start:]
-                        if len(final_chunk) >= adjusted_min_size:
-                            overlapping_chunks.append(final_chunk)
-                    break
-           
-            if len(overlapping_chunks) >= 5:
-                processed_chunks = overlapping_chunks
+        current_text += cleaned_para + " "
+        current_pages.add(page_num)
         
-            elif len(processed_chunks) < 3:
-                return []
-        
-        return [(chunk, page_number) for chunk in processed_chunks]
-
-    for page_num, page_text in text_by_page:
-        page_chunks = smart_chunk_processing(page_text, page_num)
-        if page_chunks:  
-            chunks.extend(page_chunks)
-
+        while len(current_text) >= chunk_size:
+            chunk = current_text[:chunk_size]
+            
+            if len(current_text) > chunk_size and current_text[chunk_size] == '.':
+                chunk = current_text[:chunk_size+1]
+            elif not chunk.rstrip().endswith('.'):
+                period_index = current_text.find('.', chunk_size)
+                if period_index != -1:
+                    chunk = current_text[:period_index + 1]
+            
+            chunk = chunk.strip()
+            if chunk: 
+                start_page = min(current_pages)
+                end_page = max(current_pages)
+                chunks.append((chunk, start_page, end_page))
+            
+            current_text = current_text[len(chunk) - overlap_size:].strip()
+            current_pages = set()
+    
+    if current_text.strip():
+        start_page = min(current_pages) if current_pages else 1
+        end_page = max(current_pages) if current_pages else 1
+        chunks.append((current_text.strip(), start_page, end_page))
+    
+    logger.info(f"Created {len(chunks)} chunks")
     return chunks
+
 
 def process_document(file_path):
     """ Process a single document """
@@ -239,10 +226,7 @@ def process_document(file_path):
 def create_langchain_documents(found_files, collection_name):
     """
     Create langchain documents from the extracted and processed text.
-    
-    This function processes PDF, PPTX, DOCX, TXT, XLSX, and CSV files in parallel.
-    If a PDF requires OCR processing (no text found), it's handled sequentially.
-    Now includes better handling of small documents through chunk overlapping.
+    Now uses sliding window chunking for better text segmentation.
     """
     db_utility.create_user_access(collection_name)
     db_utility.chunking_monitor()
@@ -253,18 +237,28 @@ def create_langchain_documents(found_files, collection_name):
         text_by_page, message = process_document(file)
         if text_by_page and 'error' not in message.lower():
             chunks = read_and_split_text(text_by_page)
-            logger.info(f"current processing file {file} with {len(chunks)} chunks")
+            logger.info(f"Current processing file {file} with {len(chunks)} chunks")
             
-            if chunks:  
+            if chunks:
                 documents = []
-                for chunk, page_num in chunks:
-                    doc = Document(page_content=chunk, metadata={'source': file, 'page': str(page_num)})
+                for chunk, start_page, end_page in chunks:
+                    doc = Document(
+                        page_content=chunk,
+                        metadata={
+                            'source': file,
+                            'page': f"{start_page}-{end_page}" if start_page != end_page else str(start_page)
+                        }
+                    )
                     documents.append(doc)
 
                 if documents:
                     try:
-                        Milvus.from_documents(documents, embeddings, collection_name=collection_name,
-                                            connection_args={'uri': "http://localhost:19530"})
+                        Milvus.from_documents(
+                            documents,
+                            embeddings,
+                            collection_name=collection_name,
+                            connection_args={'uri': "http://localhost:19530"}
+                        )
                         db_utility.insert_user_access(file, 'YES', message, collection_name)
                     except Exception as e:
                         error_message = f"Error inserting into Milvus: {str(e)}"
@@ -280,24 +274,33 @@ def create_langchain_documents(found_files, collection_name):
         progress_percentage = (file_index + 1) / len(found_files) * 100
         yield {"progress_percentage": progress_percentage, "current_progress": file_index + 1, "total_files": len(found_files)}
 
-    # Process OCR files
     for ocr_file_index, ocr_file in enumerate(tqdm(OCR_LIST, desc="Overall Progress")):
         tqdm().set_description(f"Processing File: {ocr_file}")
         text_by_page, message = process_ocr_document(ocr_file)
         if text_by_page:
             chunks = read_and_split_text(text_by_page)
-            logger.info(f"current processing file {ocr_file} with {len(chunks)} chunks")
+            logger.info(f"Current processing OCR file {ocr_file} with {len(chunks)} chunks")
             
-            if chunks:  
+            if chunks:
                 documents = []
-                for chunk, page_num in chunks:
-                    doc = Document(page_content=chunk, metadata={'source': ocr_file, 'page': str(page_num)})
+                for chunk, start_page, end_page in chunks:
+                    doc = Document(
+                        page_content=chunk,
+                        metadata={
+                            'source': ocr_file,
+                            'page': f"{start_page}-{end_page}" if start_page != end_page else str(start_page)
+                        }
+                    )
                     documents.append(doc)
                     
                 if documents:
                     try:
-                        Milvus.from_documents(documents, embeddings, collection_name=collection_name,
-                                            connection_args={'uri': "http://localhost:19530"})
+                        Milvus.from_documents(
+                            documents,
+                            embeddings,
+                            collection_name=collection_name,
+                            connection_args={'uri': "http://localhost:19530"}
+                        )
                         db_utility.update_ocr_status(ocr_file, collection_name)
                     except Exception as e:
                         error_message = f"Error inserting OCR document into Milvus: {str(e)}"
