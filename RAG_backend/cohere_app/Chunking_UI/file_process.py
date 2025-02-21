@@ -293,6 +293,7 @@ def create_langchain_documents(found_files, collection_name):
     """
     Create langchain documents from the extracted and processed text.
     Now uses sliding window chunking for better text segmentation.
+    Improved page number handling to avoid unnecessary ranges.
     """
     db_utility.create_user_access(collection_name)
     db_utility.chunking_monitor()
@@ -308,11 +309,12 @@ def create_langchain_documents(found_files, collection_name):
             if chunks:
                 documents = []
                 for chunk, start_page, end_page in chunks:
+                    page_info = str(start_page) if start_page == end_page else f"{start_page}-{end_page}"
                     doc = Document(
                         page_content=chunk,
                         metadata={
                             'source': file,
-                            'page': f"{start_page}-{end_page}" if start_page != end_page else str(start_page)
+                            'page': page_info
                         }
                     )
                     documents.append(doc)
@@ -340,6 +342,7 @@ def create_langchain_documents(found_files, collection_name):
         progress_percentage = (file_index + 1) / len(found_files) * 100
         yield {"progress_percentage": progress_percentage, "current_progress": file_index + 1, "total_files": len(found_files)}
 
+    # Process OCR files
     for ocr_file_index, ocr_file in enumerate(tqdm(OCR_LIST, desc="Overall Progress")):
         tqdm().set_description(f"Processing File: {ocr_file}")
         text_by_page, message = process_ocr_document(ocr_file)
@@ -350,11 +353,13 @@ def create_langchain_documents(found_files, collection_name):
             if chunks:
                 documents = []
                 for chunk, start_page, end_page in chunks:
+                    # Consistent page number handling for OCR files too
+                    page_info = str(start_page) if start_page == end_page else f"{start_page}-{end_page}"
                     doc = Document(
                         page_content=chunk,
                         metadata={
                             'source': ocr_file,
-                            'page': f"{start_page}-{end_page}" if start_page != end_page else str(start_page)
+                            'page': page_info
                         }
                     )
                     documents.append(doc)
