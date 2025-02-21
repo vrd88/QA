@@ -309,12 +309,11 @@ def create_langchain_documents(found_files, collection_name):
             if chunks:
                 documents = []
                 for chunk, start_page, end_page in chunks:
-                    page_info = str(start_page) if start_page == end_page else f"{start_page}-{end_page}"
                     doc = Document(
                         page_content=chunk,
                         metadata={
                             'source': file,
-                            'page': page_info
+                            'page': str(start_page)
                         }
                     )
                     documents.append(doc)
@@ -353,13 +352,11 @@ def create_langchain_documents(found_files, collection_name):
             if chunks:
                 documents = []
                 for chunk, start_page, end_page in chunks:
-                    # Consistent page number handling for OCR files too
-                    page_info = str(start_page) if start_page == end_page else f"{start_page}-{end_page}"
                     doc = Document(
                         page_content=chunk,
                         metadata={
                             'source': ocr_file,
-                            'page': page_info
+                            'page': str(start_page)
                         }
                     )
                     documents.append(doc)
