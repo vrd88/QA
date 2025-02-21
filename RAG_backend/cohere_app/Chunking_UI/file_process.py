@@ -151,7 +151,6 @@ def clean_chunk(chunk):
     cleaned_chunk = re.sub(r'\s+', ' ', cleaned_chunk)
     return cleaned_chunk.strip()
 
-
 def read_and_split_text(text_by_page, chunk_size=800, overlap_size=200):
     """
     Create chunks using a sliding window approach while tracking page numbers.
@@ -184,17 +183,17 @@ def read_and_split_text(text_by_page, chunk_size=800, overlap_size=200):
                     chunk = current_text[:period_index + 1]
             
             chunk = chunk.strip()
-            if chunk: 
-                start_page = min(current_pages)
-                end_page = max(current_pages)
+            if chunk:
+                start_page = min(current_pages) if current_pages else page_num
+                end_page = max(current_pages) if current_pages else page_num
                 chunks.append((chunk, start_page, end_page))
             
             current_text = current_text[len(chunk) - overlap_size:].strip()
-            current_pages = set()
+            current_pages = {page_num}
     
     if current_text.strip():
-        start_page = min(current_pages) if current_pages else 1
-        end_page = max(current_pages) if current_pages else 1
+        start_page = min(current_pages) if current_pages else page_num
+        end_page = max(current_pages) if current_pages else page_num
         chunks.append((current_text.strip(), start_page, end_page))
     
     logger.info(f"Created {len(chunks)} chunks")
