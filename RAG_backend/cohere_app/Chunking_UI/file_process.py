@@ -73,11 +73,53 @@ def process_pptx(file_path):
 
 
 def process_docx(file_path):
-    """ Process .docx file and extract text """
+    """ 
+    Process .docx file and extract text with accurate page tracking:
+    - Uses section breaks to determine pages
+    - Calculates page breaks based on characters and paragraphs
+    - Maintains proper page numbering
+    """
     try:
         doc = DocxDocument(file_path)
-        text_by_paragraph = [(i + 1, para.text) for i, para in enumerate(doc.paragraphs)]
-        return text_by_paragraph, "text extraction done" 
+        text_by_page = []
+        current_page = 1
+        current_page_text = []
+        char_count = 0
+        
+        CHARS_PER_PAGE = 3000
+        
+        for para in doc.paragraphs:
+            para_text = para.text.strip()
+            if not para_text:
+                continue
+                
+            if para._element.xpath('.//w:sectPr'):
+                if current_page_text:
+                    text_by_page.append((current_page, '\n'.join(current_page_text)))
+                    current_page += 1
+                    current_page_text = []
+                    char_count = 0
+            
+            if para._element.xpath('.//w:br[@w:type="page"]'):
+                if current_page_text:
+                    text_by_page.append((current_page, '\n'.join(current_page_text)))
+                    current_page += 1
+                    current_page_text = []
+                    char_count = 0
+            
+            current_page_text.append(para_text)
+            char_count += len(para_text)
+            
+            if char_count >= CHARS_PER_PAGE:
+                text_by_page.append((current_page, '\n'.join(current_page_text)))
+                current_page += 1
+                current_page_text = []
+                char_count = 0
+        
+        if current_page_text:
+            text_by_page.append((current_page, '\n'.join(current_page_text)))
+        
+        return text_by_page, "text extraction done"
     except Exception as e:
         logger.exception(f"Error processing DOCX file {file_path}")
         return [], f"DOCX FILE ERROR : {e}"
@@ -95,15 +137,40 @@ def process_txt(file_path):
 
 
 def process_xlsx(file_path):
-    """ Process .xlsx file and extract text sheet by sheet """
+    """ 
+    Process .xlsx file and extract text sheet by sheet with improved handling:
+    - Skips empty cells
+    - Properly handles None values
+    - Maintains sheet structure
+    - Includes sheet names in output
+    """
     try:
         workbook = openpyxl.load_workbook(file_path)
         text_by_sheet = []
-        for sheet in workbook.sheetnames:
-            worksheet = workbook[sheet]
-            sheet_text = "\n".join([",".join([str(cell.value) for cell in row]) for row in worksheet.iter_rows()])
-            text_by_sheet.append((sheet, sheet_text))
-        return text_by_sheet, "text extraction done"
+        
+        for sheet_name in workbook.sheetnames:
+            worksheet = workbook[sheet_name]
+            sheet_content = []
+            
+            has_content = False
+            
+            for row in worksheet.iter_rows():
+                row_values = []
+                for cell in row:
+                    if cell.value is not None:
+                        cell_value = str(cell.value).strip()
+                        if cell_value:  
+                            row_values.append(cell_value)
+                            has_content = True
+                
+                if row_values: 
+                    sheet_content.append(",".join(row_values))
+            
+            if has_content:
+                sheet_text = f"Sheet: {sheet_name}\n" + "\n".join(sheet_content)
+                text_by_sheet.append((sheet_name, sheet_text))
+        
+        return text_by_sheet, "text extraction done" if text_by_sheet else "No content found in Excel file"
     except Exception as e:
         logger.exception(f"Error processing XLSX file {file_path}")
         return [], f"EXCEL FILE ERROR : {e}"
